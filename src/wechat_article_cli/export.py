@@ -14,7 +14,23 @@ from typing import Literal
 
 from wechat_article_cli.storage import Run
 
-_HEADERS = ["文章标题", "公众号名称", "作者", "发布日期", "文章链接", "摘要", "文章内容"]
+_HEADERS = [
+    "文章标题",
+    "公众号名称",
+    "作者",
+    "发布日期",
+    "文章链接",
+    "摘要",
+    "正文状态",
+    "正文错误",
+    "文章内容",
+]
+
+_CONTENT_STATUS_TEXT = {
+    "cached": "已缓存",
+    "fetched": "新抓取",
+    "failed": "失败",
+}
 
 
 def _run_export_dir(run_id: str) -> Path:
@@ -40,6 +56,8 @@ def _article_row(article: dict) -> list[str]:
         article.get("create_date", ""),
         article.get("link", ""),
         article.get("digest", ""),
+        _CONTENT_STATUS_TEXT.get(article.get("content_status", ""), ""),
+        article.get("content_error", ""),
         _get_content(article.get("link", "")),
     ]
 
@@ -119,7 +137,7 @@ def _export_excel(run: Run, out_dir: Path) -> Path:
                 cell.fill = even_fill
 
     # 列宽
-    widths = [40, 20, 12, 14, 60, 50, 80]
+    widths = [40, 20, 12, 14, 60, 50, 12, 50, 80]
     for col, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + col)].width = w
 

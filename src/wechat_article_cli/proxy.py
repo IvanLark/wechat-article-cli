@@ -113,7 +113,10 @@ def validate_html(html: str) -> tuple[str, str | None]:
     weui_msg = soup.find(class_="weui-msg")
     if weui_msg:
         title_el = weui_msg.find(class_="weui-msg__title")
+        desc_el = weui_msg.find(class_="weui-msg__desc")
         msg = title_el.get_text(strip=True) if title_el else ""
+        if not msg and desc_el:
+            msg = desc_el.get_text(strip=True)
         if msg in ("该内容已被发布者删除", "The content has been deleted by the author."):
             return ("deleted", None)
         return ("exception", msg or None)
@@ -121,6 +124,11 @@ def validate_html(html: str) -> tuple[str, str | None]:
     if msg_block:
         return ("exception", msg_block.get_text(strip=True) or None)
     return ("error", None)
+
+
+def _article_status_error(msg: str | None) -> ValueError:
+    detail = msg or "页面未提供错误信息，可能是文章访问受限或微信风控页面"
+    return ValueError(f"文章状态异常：{detail}")
 
 
 async def fetch_article_html(
@@ -151,7 +159,7 @@ async def fetch_article_html(
             elif status == "deleted":
                 raise ValueError("文章已被作者删除")
             elif status == "exception":
-                raise ValueError(f"文章状态异常：{msg}")
+                raise _article_status_error(msg)
             else:
                 manager.record_failure(proxy)
                 last_error = ValueError(
@@ -211,7 +219,7 @@ async def _fetch_direct(link: str) -> str:
     if status == "deleted":
         raise ValueError("文章已被作者删除")
     if status == "exception":
-        raise ValueError(f"文章状态异常：{msg}")
+        raise _article_status_error(msg)
     raise RuntimeError(
         "直连请求被微信风控拦截。请配置 WECHAT_PROXY_URL 后重试"
     )

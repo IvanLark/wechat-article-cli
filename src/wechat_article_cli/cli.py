@@ -93,9 +93,9 @@ def _emit_failure(ctx: CommandContext, exc: Exception, *, compact: bool = False)
         exit_code = exc.exit_code
         message = exc.message
     else:
-        payload = failure("wechat_article_failed", str(exc))
+        message = _format_exception(exc)
+        payload = failure("wechat_article_failed", message)
         exit_code = 1
-        message = str(exc)
 
     if ctx.output_mode == "json":
         print_json(payload, compact=compact)
@@ -104,6 +104,25 @@ def _emit_failure(ctx: CommandContext, exc: Exception, *, compact: bool = False)
     else:
         click.echo(message, err=True)
     raise SystemExit(exit_code)
+
+
+def _format_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return f"{type(exc).__name__}（无错误详情）"
+
+
+def _run_legacy_command(handler, *args) -> None:
+    try:
+        handler(*args)
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        raise
+    except Exception as exc:
+        click.echo(_format_exception(exc), err=True)
+        raise SystemExit(1) from exc
 
 
 def _render_human_auth_start(result: AuthStartOutput) -> None:
@@ -441,7 +460,7 @@ def account_group() -> None:
 def account_list_command(group_name: str | None) -> None:
     from wechat_article_cli.cmd_account import cmd_list
 
-    cmd_list(group_name)
+    _run_legacy_command(cmd_list, group_name)
 
 
 @account_group.command("search", **command_help_kwargs(get_command_spec("account.search")))
@@ -449,7 +468,7 @@ def account_list_command(group_name: str | None) -> None:
 def account_search_command(query: str) -> None:
     from wechat_article_cli.cmd_account import cmd_search
 
-    cmd_search(query)
+    _run_legacy_command(cmd_search, query)
 
 
 @account_group.command("add", **command_help_kwargs(get_command_spec("account.add")))
@@ -457,7 +476,7 @@ def account_search_command(query: str) -> None:
 def account_add_command(names: str) -> None:
     from wechat_article_cli.cmd_account import cmd_add
 
-    cmd_add(names)
+    _run_legacy_command(cmd_add, names)
 
 
 @account_group.command("remove", **command_help_kwargs(get_command_spec("account.remove")))
@@ -465,7 +484,7 @@ def account_add_command(names: str) -> None:
 def account_remove_command(name: str) -> None:
     from wechat_article_cli.cmd_account import cmd_remove
 
-    cmd_remove(name)
+    _run_legacy_command(cmd_remove, name)
 
 
 @account_group.command("import", **command_help_kwargs(get_command_spec("account.import")))
@@ -473,7 +492,7 @@ def account_remove_command(name: str) -> None:
 def account_import_command(json_path: str) -> None:
     from wechat_article_cli.cmd_account import cmd_import
 
-    cmd_import(json_path)
+    _run_legacy_command(cmd_import, json_path)
 
 
 @account_group.command("export", **command_help_kwargs(get_command_spec("account.export")))
@@ -481,7 +500,7 @@ def account_import_command(json_path: str) -> None:
 def account_export_command(json_path: str) -> None:
     from wechat_article_cli.cmd_account import cmd_export
 
-    cmd_export(json_path)
+    _run_legacy_command(cmd_export, json_path)
 
 
 @cli.group("group", **group_help_kwargs(get_command_spec("group")))
@@ -493,7 +512,7 @@ def group_group() -> None:
 def group_list_command() -> None:
     from wechat_article_cli.cmd_group import cmd_list
 
-    cmd_list()
+    _run_legacy_command(cmd_list)
 
 
 @group_group.command("create", **command_help_kwargs(get_command_spec("group.create")))
@@ -501,7 +520,7 @@ def group_list_command() -> None:
 def group_create_command(name: str) -> None:
     from wechat_article_cli.cmd_group import cmd_create
 
-    cmd_create(name)
+    _run_legacy_command(cmd_create, name)
 
 
 @group_group.command("delete", **command_help_kwargs(get_command_spec("group.delete")))
@@ -509,7 +528,7 @@ def group_create_command(name: str) -> None:
 def group_delete_command(name: str) -> None:
     from wechat_article_cli.cmd_group import cmd_delete
 
-    cmd_delete(name)
+    _run_legacy_command(cmd_delete, name)
 
 
 @group_group.command("add", **command_help_kwargs(get_command_spec("group.add")))
@@ -518,7 +537,7 @@ def group_delete_command(name: str) -> None:
 def group_add_command(group_name: str, names: str) -> None:
     from wechat_article_cli.cmd_group import cmd_add
 
-    cmd_add(group_name, names)
+    _run_legacy_command(cmd_add, group_name, names)
 
 
 @group_group.command("remove", **command_help_kwargs(get_command_spec("group.remove")))
@@ -527,7 +546,7 @@ def group_add_command(group_name: str, names: str) -> None:
 def group_remove_command(group_name: str, name: str) -> None:
     from wechat_article_cli.cmd_group import cmd_remove_account
 
-    cmd_remove_account(group_name, name)
+    _run_legacy_command(cmd_remove_account, group_name, name)
 
 
 @cli.group("task", **group_help_kwargs(get_command_spec("task")))
@@ -540,14 +559,14 @@ def task_group() -> None:
 def task_create_command(raw_args: tuple[str, ...]) -> None:
     from wechat_article_cli.cmd_task import cmd_create
 
-    cmd_create(list(raw_args))
+    _run_legacy_command(cmd_create, list(raw_args))
 
 
 @task_group.command("list", **command_help_kwargs(get_command_spec("task.list")))
 def task_list_command() -> None:
     from wechat_article_cli.cmd_task import cmd_list
 
-    cmd_list([])
+    _run_legacy_command(cmd_list, [])
 
 
 @task_group.command("info", **command_help_kwargs(get_command_spec("task.info")))
@@ -555,7 +574,7 @@ def task_list_command() -> None:
 def task_info_command(task_id: str) -> None:
     from wechat_article_cli.cmd_task import cmd_info
 
-    cmd_info([task_id])
+    _run_legacy_command(cmd_info, [task_id])
 
 
 @task_group.command("run", **command_help_kwargs(get_command_spec("task.run")))
@@ -563,7 +582,7 @@ def task_info_command(task_id: str) -> None:
 def task_run_command(task_id: str) -> None:
     from wechat_article_cli.cmd_task import cmd_run
 
-    cmd_run([task_id])
+    _run_legacy_command(cmd_run, [task_id])
 
 
 @cli.group("run", **group_help_kwargs(get_command_spec("run")))
@@ -575,7 +594,7 @@ def run_group() -> None:
 def run_list_command() -> None:
     from wechat_article_cli.cmd_run import cmd_list
 
-    cmd_list([])
+    _run_legacy_command(cmd_list, [])
 
 
 @run_group.command("status", **command_help_kwargs(get_command_spec("run.status")))
@@ -583,7 +602,7 @@ def run_list_command() -> None:
 def run_status_command(run_id: str) -> None:
     from wechat_article_cli.cmd_run import cmd_status
 
-    cmd_status([run_id])
+    _run_legacy_command(cmd_status, [run_id])
 
 
 @run_group.command("export", **command_help_kwargs(get_command_spec("run.export")))
@@ -592,7 +611,7 @@ def run_status_command(run_id: str) -> None:
 def run_export_command(run_id: str, fmt: str) -> None:
     from wechat_article_cli.cmd_run import cmd_export
 
-    cmd_export([run_id, "--format", fmt])
+    _run_legacy_command(cmd_export, [run_id, "--format", fmt])
 
 
 @cli.command("doctor", **command_help_kwargs(get_command_spec("doctor")))

@@ -129,6 +129,8 @@ async def _phase_content(run: Run) -> None:
     manager = ProxyManager(proxy_urls) if proxy_urls else None
     sem = asyncio.Semaphore(run.config.content_concurrency)
 
+    _reset_content_progress(run)
+
     to_fetch = []
     for article in run.articles:
         if is_article_cached(article["link"]):
@@ -155,15 +157,32 @@ async def _phase_content(run: Run) -> None:
                 _mark_new(run, article)
                 logger.debug("内容获取成功：{}", title)
             except Exception as e:
-                _mark_content_failed(run, article)
-                logger.warning("内容获取失败：{} - {}", title, e)
+                error = _format_exception(e)
+                _mark_content_failed(run, article, error)
+                logger.warning("内容获取失败：{} - {}", title, error)
 
     await asyncio.gather(*[_fetch_one(a) for a in to_fetch])
     run.updated_at = datetime.now(timezone.utc).isoformat()
     save_run(run)
 
 
+def _reset_content_progress(run: Run) -> None:
+    for prog in run.progress:
+        prog.articles_cached = 0
+        prog.articles_new = 0
+        prog.content_failed = 0
+
+
+def _format_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return f"{type(exc).__name__}（无错误详情）"
+
+
 def _mark_cached(run: Run, article: dict) -> None:
+    article["content_status"] = "cached"
+    article["content_error"] = ""
     name = article.get("account_name", "")
     prog = next((p for p in run.progress if p.name == name), None)
     if prog:
@@ -171,13 +190,17 @@ def _mark_cached(run: Run, article: dict) -> None:
 
 
 def _mark_new(run: Run, article: dict) -> None:
+    article["content_status"] = "fetched"
+    article["content_error"] = ""
     name = article.get("account_name", "")
     prog = next((p for p in run.progress if p.name == name), None)
     if prog:
         prog.articles_new += 1
 
 
-def _mark_content_failed(run: Run, article: dict) -> None:
+def _mark_content_failed(run: Run, article: dict, error: str) -> None:
+    article["content_status"] = "failed"
+    article["content_error"] = error
     name = article.get("account_name", "")
     prog = next((p for p in run.progress if p.name == name), None)
     if prog:

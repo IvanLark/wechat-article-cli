@@ -72,6 +72,17 @@ def cmd_status(args: list[str]) -> None:
             "  {} {}: 找到={} 新增={} 缓存={}{}{}",
             icon, p.name, p.articles_found, p.articles_new, p.articles_cached, fail_info, extra,
         )
+    failed_articles = [
+        a for a in run.articles if a.get("content_status") == "failed"
+    ]
+    if failed_articles:
+        logger.info("正文失败明细：")
+        for article in failed_articles[:10]:
+            logger.info(
+                "  - {}：{}",
+                article.get("title", ""),
+                article.get("content_error", "无错误详情"),
+            )
     logger.info("导出结果: wechat-article run export {} --format json|csv|excel", run.run_id)
 
 

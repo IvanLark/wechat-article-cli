@@ -719,9 +719,9 @@ def build_doctor_checks() -> list[BoundDoctorCheck]:
         BoundDoctorCheck(
             spec=DoctorCheckSpec(name="proxy_config", description="代理配置是否存在"),
             runner=lambda: {
-                "ok": bool(os.environ.get("WECHAT_PROXY_URL")),
-                "message": "已配置 WECHAT_PROXY_URL" if os.environ.get("WECHAT_PROXY_URL") else "未配置 WECHAT_PROXY_URL",
-                "hint": None if os.environ.get("WECHAT_PROXY_URL") else f"如果需要抓取文章内容，可配置 {CLI_NAME} 使用的代理",
+                "ok": True,
+                "message": "已配置 WECHAT_PROXY_URL" if os.environ.get("WECHAT_PROXY_URL") else "未配置 WECHAT_PROXY_URL，文章正文将先尝试直连",
+                "hint": None if os.environ.get("WECHAT_PROXY_URL") else "直连遇到微信风控时，再配置文章代理",
             },
         ),
         BoundDoctorCheck(

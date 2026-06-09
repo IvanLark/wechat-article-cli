@@ -25,7 +25,7 @@ pipx install git+https://github.com/IvanLark/wechat-article-cli.git
 ```bash
 git clone https://github.com/IvanLark/wechat-article-cli.git
 cd wechat-article-cli
-uv sync
+uv sync --python 3.11
 uv run wechat-article --help
 ```
 
@@ -68,6 +68,8 @@ wechat-article account add AI新榜
 wechat-article article list AI新榜 --count 5
 ```
 
+`--count` 表示向公众号后台请求的图文消息条数。公众号一次推送里可能包含多篇图文，所以最终展示的文章数可能大于 `--count`。
+
 抓取正文为 Markdown：
 
 ```bash
@@ -92,7 +94,7 @@ export WECHAT_ARTICLE_HOME="$HOME/.wechat-article"
 
 ## 代理配置
 
-文章正文页面可能被微信风控拦截。可以配置代理服务：
+文章正文会先尝试直连。遇到微信风控拦截时，可以配置代理服务：
 
 ```bash
 export WECHAT_PROXY_URL="https://your-worker.example.com"
@@ -110,6 +112,8 @@ export WECHAT_PROXY_URL="https://a.example.com,https://b.example.com"
 ```text
 GET <proxy>?url=<encoded_article_url>&authorization=<token>
 ```
+
+登录、搜索公众号、拉取文章列表走公众号后台接口，一般无需代理。代理只用于文章正文页面抓取。
 
 ## 结构化输出
 
@@ -163,6 +167,12 @@ wechat-article run export <run_id> --format csv
 wechat-article run export <run_id> --format excel
 ```
 
+导出的 JSON/CSV/Excel 会包含正文状态和正文错误：
+
+- `cached`：正文来自本地缓存
+- `fetched`：本次执行新抓取成功
+- `failed`：正文抓取失败，错误原因会写入导出文件
+
 ## 命令自描述
 
 这个工具内置了面向脚本和 Agent 的自描述命令：
@@ -182,7 +192,7 @@ wechat-article doctor --json
 ## 开发
 
 ```bash
-uv sync
+uv sync --python 3.11
 uv run ruff check src/wechat_article_cli
 uv run wechat-article --help
 ```
