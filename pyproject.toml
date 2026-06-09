@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wechat-article-cli"
+version = "0.1.0"
+description = "非官方微信公众号文章抓取和本地整理 CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "chenyifan" },
+]
+keywords = ["wechat", "cli", "article", "markdown"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "click>=8.0",
+    "httpx>=0.28.1",
+    "loguru>=0.7.3",
+    "lxml>=6.0.2",
+    "markdownify>=1.2.2",
+    "openpyxl>=3.1.5",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+wechat-article = "wechat_article_cli.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/IvanLark/wechat-article-cli"
+Repository = "https://github.com/IvanLark/wechat-article-cli"
+Issues = "https://github.com/IvanLark/wechat-article-cli/issues"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["wechat_article_cli*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "I"]

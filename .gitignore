@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+
+# 环境变量和本地状态
+.env
+.env.*
+!.env.example
+/runtime/
+/data/
+/exports/
+*.checkpoint.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
