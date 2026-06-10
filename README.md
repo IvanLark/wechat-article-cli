@@ -19,8 +19,22 @@
 
 本项目使用 Python 3.11+。
 
+如果你使用 `uv`，推荐用 `uv tool` 全局安装：
+
+```bash
+uv tool install git+https://github.com/IvanLark/wechat-article-cli.git
+```
+
+也可以用 `pipx` 全局安装：
+
 ```bash
 pipx install git+https://github.com/IvanLark/wechat-article-cli.git
+```
+
+安装后检查：
+
+```bash
+wechat-article --help
 ```
 
 本地开发：
