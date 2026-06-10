@@ -31,6 +31,8 @@ INSPECTABLE_COMMANDS = (
     "account.export",
     "group",
     "group.list",
+    "group.import",
+    "group.export",
     "group.create",
     "group.delete",
     "group.add",
@@ -92,7 +94,7 @@ AUTH_SPEC = CommandSpec(
         f"用户扫码后，再执行 `{CLI_NAME} auth confirm`",
         f"日常健康检查可执行 `{CLI_NAME} auth check --json`",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -137,7 +139,7 @@ ACCOUNT_SPEC = CommandSpec(
         ExampleSpec(command=f"{CLI_NAME} account list", description="查看本地库中的公众号"),
     ],
     env=ENV_REQUIREMENTS,
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="required",
     mutating=True,
     next_steps=[
@@ -157,7 +159,7 @@ ACCOUNT_LIST_SPEC = CommandSpec(
         ExampleSpec(command=f"{CLI_NAME} account list", description="查看全部公众号"),
         ExampleSpec(command=f"{CLI_NAME} account list --group Agent资讯", description="查看某个分组内的公众号"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -174,7 +176,7 @@ ACCOUNT_SEARCH_SPEC = CommandSpec(
     examples=[
         ExampleSpec(command=f"{CLI_NAME} account search AI新榜", description="搜索公众号"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="required",
     mutating=False,
 )
@@ -195,7 +197,7 @@ ACCOUNT_ADD_SPEC = CommandSpec(
         f"添加后可执行 `{CLI_NAME} group add <分组名> <名称>`",
         f"也可以直接执行 `{CLI_NAME} article list <名称>`",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="required",
     mutating=True,
 )
@@ -209,7 +211,7 @@ ACCOUNT_REMOVE_SPEC = CommandSpec(
     arguments=[
         ArgumentSpec(name="name", description="公众号名称", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -230,7 +232,7 @@ ACCOUNT_IMPORT_SPEC = CommandSpec(
         f"导入后可执行 `{CLI_NAME} account list` 检查结果",
         f"如需分组，可执行 `{CLI_NAME} group add <分组名> <名称>`",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -247,7 +249,7 @@ ACCOUNT_EXPORT_SPEC = CommandSpec(
     examples=[
         ExampleSpec(command=f"{CLI_NAME} account export ./公众号列表.json", description="导出本地库"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -262,11 +264,12 @@ GROUP_SPEC = CommandSpec(
         ExampleSpec(command=f"{CLI_NAME} group list", description="查看所有分组"),
     ],
     env=ENV_REQUIREMENTS,
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
     next_steps=[
         f"创建分组后，可执行 `{CLI_NAME} group add <分组名> <名称>`",
+        f"迁移或备份分组时，可执行 `{CLI_NAME} group import <json路径>` / `{CLI_NAME} group export <json路径>`",
         f"准备批量抓取时，可执行 `{CLI_NAME} task create --group <分组名>`",
     ],
 )
@@ -277,7 +280,45 @@ GROUP_LIST_SPEC = CommandSpec(
     path="wechat_article.group.list",
     summary="列出所有分组",
     when_to_use="当你需要查看当前有哪些分组，以及每个分组的公众号成员时。",
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=False,
+)
+
+
+GROUP_IMPORT_SPEC = CommandSpec(
+    name="group.import",
+    path="wechat_article.group.import",
+    summary="从 JSON 文件批量导入分组",
+    when_to_use="当你已经有一份分组配置 JSON，希望把它导入当前工作区时。",
+    arguments=[
+        ArgumentSpec(name="json_path", description="分组 JSON 文件路径", required=True, positional=True, value_type="path"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} group import ./分组.json", description="批量导入分组"),
+    ],
+    next_steps=[
+        f"导入后可执行 `{CLI_NAME} group list --json` 检查成员",
+        f"准备抓取时，可执行 `{CLI_NAME} task create --group <分组名>`",
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
+)
+
+
+GROUP_EXPORT_SPEC = CommandSpec(
+    name="group.export",
+    path="wechat_article.group.export",
+    summary="把本地分组导出为 JSON",
+    when_to_use="当你希望备份分组，或把分组配置迁移到别的工作区时。",
+    arguments=[
+        ArgumentSpec(name="json_path", description="导出的 JSON 文件路径", required=True, positional=True, value_type="path"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} group export ./分组.json", description="导出分组"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -293,7 +334,7 @@ GROUP_CREATE_SPEC = CommandSpec(
     next_steps=[
         f"创建后可执行 `{CLI_NAME} group add <分组名> <名称>`",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -306,7 +347,7 @@ GROUP_DELETE_SPEC = CommandSpec(
     arguments=[
         ArgumentSpec(name="name", description="分组名", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -320,7 +361,7 @@ GROUP_ADD_SPEC = CommandSpec(
         ArgumentSpec(name="group_name", description="分组名", required=True, positional=True, value_type="string"),
         ArgumentSpec(name="names", description="公众号名称，多个用逗号分隔", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -334,7 +375,7 @@ GROUP_REMOVE_SPEC = CommandSpec(
         ArgumentSpec(name="group_name", description="分组名", required=True, positional=True, value_type="string"),
         ArgumentSpec(name="name", description="公众号名称", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -380,7 +421,7 @@ ARTICLE_SPEC = CommandSpec(
     failure_recovery=[
         "如果正文抓取失败，优先检查代理配置是否齐全",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -420,7 +461,7 @@ TASK_SPEC = CommandSpec(
         ExampleSpec(command=f"{CLI_NAME} task list", description="查看任务列表"),
     ],
     env=ENV_REQUIREMENTS,
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
     next_steps=[
@@ -441,7 +482,7 @@ TASK_CREATE_SPEC = CommandSpec(
     next_steps=[
         f"创建后可执行 `{CLI_NAME} task run <task_id>` 直接跑一次",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -452,7 +493,7 @@ TASK_LIST_SPEC = CommandSpec(
     path="wechat_article.task.list",
     summary="列出所有任务",
     when_to_use="当你需要查看已经定义了哪些任务模板，并决定下一步要运行哪个任务时。",
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -466,7 +507,7 @@ TASK_INFO_SPEC = CommandSpec(
     arguments=[
         ArgumentSpec(name="task_id", description="任务 ID", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -483,7 +524,7 @@ TASK_RUN_SPEC = CommandSpec(
     next_steps=[
         f"执行后可用 `{CLI_NAME} run status <run_id>` 查看详情",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=True,
 )
@@ -498,7 +539,7 @@ RUN_SPEC = CommandSpec(
         ExampleSpec(command=f"{CLI_NAME} run list", description="查看执行记录"),
     ],
     env=ENV_REQUIREMENTS,
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
     next_steps=[
@@ -513,7 +554,7 @@ RUN_LIST_SPEC = CommandSpec(
     path="wechat_article.run.list",
     summary="列出执行记录",
     when_to_use="当你需要浏览历史执行记录，并决定查看哪个 run 的详情时。",
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -527,7 +568,7 @@ RUN_STATUS_SPEC = CommandSpec(
     arguments=[
         ArgumentSpec(name="run_id", description="运行记录 ID", required=True, positional=True, value_type="string"),
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -547,7 +588,7 @@ RUN_EXPORT_SPEC = CommandSpec(
     next_steps=[
         "导出后可把结果进一步沉淀到 Obsidian、飞书或别的后续能力",
     ],
-    output=OutputSpec(supports_human=True, supports_json=False, supports_yaml=False),
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
 )
@@ -606,7 +647,7 @@ CAPABILITY_SPEC = CapabilitySpec(
     name=CAPABILITY_NAME,
     kind="source",
     summary="微信公众号能力：登录、账号管理、分组、文章抓取、任务与执行记录",
-    description="当前优先收编 auth/article/task/run 四块核心流程，account/group 暂时保留旧逻辑外壳包裹。",
+    description="面向人类和 AI 的微信公众号文章抓取 CLI。命令支持结构化 JSON/YAML 输出，方便 Agent 编排登录、公众号库、分组、任务、执行记录和文章导出。",
     cli_name=CLI_NAME,
     background="微信公众号能力不是个人微信聊天能力，它依赖公众号后台登录态、公众号库、分组、任务和执行记录这些状态层。",
     when_to_use="当你希望批量跟踪某些公众号、拉取文章、沉淀正文并形成后续知识处理 workflow 时。",
@@ -632,6 +673,8 @@ CAPABILITY_SPEC = CapabilitySpec(
         ACCOUNT_EXPORT_SPEC,
         GROUP_SPEC,
         GROUP_LIST_SPEC,
+        GROUP_IMPORT_SPEC,
+        GROUP_EXPORT_SPEC,
         GROUP_CREATE_SPEC,
         GROUP_DELETE_SPEC,
         GROUP_ADD_SPEC,
@@ -677,6 +720,8 @@ COMMAND_SPECS = {
     "account.export": ACCOUNT_EXPORT_SPEC,
     "group": GROUP_SPEC,
     "group.list": GROUP_LIST_SPEC,
+    "group.import": GROUP_IMPORT_SPEC,
+    "group.export": GROUP_EXPORT_SPEC,
     "group.create": GROUP_CREATE_SPEC,
     "group.delete": GROUP_DELETE_SPEC,
     "group.add": GROUP_ADD_SPEC,

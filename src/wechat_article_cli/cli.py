@@ -7,6 +7,7 @@ import hashlib
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from pydantic import ValidationError as PydanticValidationError
@@ -39,6 +40,19 @@ from wechat_article_cli.capability import (
     get_command_spec,
 )
 from wechat_article_cli.models import (
+    AccountAddInput,
+    AccountAddOutput,
+    AccountExportInput,
+    AccountExportOutput,
+    AccountImportInput,
+    AccountImportOutput,
+    AccountListInput,
+    AccountListOutput,
+    AccountRecord,
+    AccountRemoveInput,
+    AccountRemoveOutput,
+    AccountSearchInput,
+    AccountSearchOutput,
     ArticleBatch,
     ArticleContentInput,
     ArticleContentOutput,
@@ -49,6 +63,33 @@ from wechat_article_cli.models import (
     AuthConfirmOutput,
     AuthStartOutput,
     DoctorPayload,
+    GroupAddInput,
+    GroupAddOutput,
+    GroupCreateInput,
+    GroupCreateOutput,
+    GroupDeleteInput,
+    GroupDeleteOutput,
+    GroupExportInput,
+    GroupExportOutput,
+    GroupImportInput,
+    GroupImportOutput,
+    GroupListOutput,
+    GroupRecord,
+    GroupRemoveInput,
+    GroupRemoveOutput,
+    RunExportInput,
+    RunExportOutput,
+    RunIdInput,
+    RunListOutput,
+    RunRecord,
+    RunStatusOutput,
+    TaskCreateInput,
+    TaskCreateOutput,
+    TaskIdInput,
+    TaskInfoOutput,
+    TaskListOutput,
+    TaskRecord,
+    TaskRunOutput,
 )
 
 
@@ -71,6 +112,22 @@ def _build_context(
     )
 
 
+def _build_click_context(
+    click_ctx: click.Context,
+    *,
+    command_path: str,
+    as_json: bool = False,
+    as_yaml: bool = False,
+) -> CommandContext:
+    return _build_context(
+        command_path=command_path,
+        as_json=as_json,
+        as_yaml=as_yaml,
+        debug=bool(click_ctx.obj.get("debug")),
+        verbose=bool(click_ctx.obj.get("verbose")),
+    )
+
+
 def _emit_output(payload, ctx: CommandContext, *, compact: bool = False, human_renderer=None) -> None:
     if ctx.output_mode == "json":
         print_json(payload, compact=compact)
@@ -82,6 +139,19 @@ def _emit_output(payload, ctx: CommandContext, *, compact: bool = False, human_r
         click.echo(payload)
         return
     human_renderer(payload)
+
+
+def _emit_result(
+    result: Any,
+    ctx: CommandContext,
+    *,
+    compact: bool = False,
+    human_renderer=None,
+) -> None:
+    if ctx.output_mode in {"json", "yaml"}:
+        _emit_output(success(result), ctx, compact=compact)
+        return
+    _emit_output(result, ctx, compact=compact, human_renderer=human_renderer)
 
 
 def _emit_failure(ctx: CommandContext, exc: Exception, *, compact: bool = False) -> None:
@@ -123,6 +193,157 @@ def _run_legacy_command(handler, *args) -> None:
     except Exception as exc:
         click.echo(_format_exception(exc), err=True)
         raise SystemExit(1) from exc
+
+
+def _route_logs_to_stderr(*, debug: bool = False, verbose: bool = False) -> None:
+    from loguru import logger
+
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        colorize=False,
+        format="{message}",
+        filter=lambda record: record["level"].name in {"INFO", "SUCCESS"},
+    )
+    logger.add(sys.stderr, level="WARNING", colorize=False, format="{message}")
+    if debug or verbose:
+        logger.add(
+            sys.stderr,
+            level="DEBUG",
+            colorize=False,
+            format="{time:HH:mm:ss} | {level:<7} | {name} - {message}",
+            filter=lambda record: record["level"].name == "DEBUG",
+        )
+
+
+def _split_names(names: str) -> list[str]:
+    values = [item.strip() for item in names.split(",") if item.strip()]
+    if not values:
+        raise ValueError("请指定公众号名称")
+    return values
+
+
+def _account_payload(account) -> dict[str, Any]:
+    return {
+        "fakeid": account.fakeid,
+        "name": account.name,
+        "avatar": account.avatar,
+        "signature": account.signature,
+        "added_at": account.added_at,
+    }
+
+
+def _account_record(account) -> AccountRecord:
+    return AccountRecord(**_account_payload(account))
+
+
+def _search_account_payload(account: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "fakeid": account.get("fakeid", ""),
+        "name": account.get("name", ""),
+        "avatar": account.get("avatar"),
+        "signature": account.get("signature"),
+    }
+
+
+def _search_account_record(account: dict[str, Any]) -> AccountRecord:
+    return AccountRecord(**_search_account_payload(account))
+
+
+def _group_payload(group) -> dict[str, Any]:
+    return {
+        "name": group.name,
+        "accounts": list(group.accounts),
+        "account_count": len(group.accounts),
+    }
+
+
+def _group_record(group) -> GroupRecord:
+    return GroupRecord(**_group_payload(group))
+
+
+def _task_payload(task) -> dict[str, Any]:
+    return {
+        "task_id": task.task_id,
+        "name": task.name,
+        "created_at": task.created_at,
+        "config": task.config.model_dump(mode="json"),
+    }
+
+
+def _task_record(task) -> TaskRecord:
+    return TaskRecord(**_task_payload(task))
+
+
+def _run_payload(run) -> dict[str, Any]:
+    return {
+        "run_id": run.run_id,
+        "task_id": run.task_id,
+        "status": run.status,
+        "created_at": run.created_at,
+        "updated_at": run.updated_at,
+        "config": run.config.model_dump(mode="json"),
+        "progress": [item.model_dump(mode="json") for item in run.progress],
+        "statistics": run.statistics.model_dump(mode="json"),
+        "articles": run.articles,
+    }
+
+
+def _run_record(run) -> RunRecord:
+    return RunRecord(**_run_payload(run))
+
+
+def _parse_task_create_args(raw_args: tuple[str, ...]) -> dict[str, Any]:
+    group = None
+    accounts: list[str] = []
+    name = ""
+    count = 5
+    interval = 10.0
+    after_date = None
+    fetch_content = True
+    concurrency = 3
+
+    args = list(raw_args)
+    i = 0
+    while i < len(args):
+        if args[i] == "--group" and i + 1 < len(args):
+            group = args[i + 1]
+            i += 2
+        elif args[i] == "--accounts" and i + 1 < len(args):
+            accounts = _split_names(args[i + 1])
+            i += 2
+        elif args[i] == "--name" and i + 1 < len(args):
+            name = args[i + 1]
+            i += 2
+        elif args[i] == "--count" and i + 1 < len(args):
+            count = int(args[i + 1])
+            i += 2
+        elif args[i] == "--interval" and i + 1 < len(args):
+            interval = float(args[i + 1])
+            i += 2
+        elif args[i] == "--after" and i + 1 < len(args):
+            after_date = args[i + 1]
+            i += 2
+        elif args[i] == "--no-content":
+            fetch_content = False
+            i += 1
+        elif args[i] == "--concurrency" and i + 1 < len(args):
+            concurrency = int(args[i + 1])
+            i += 2
+        else:
+            raise ValueError(f"未知参数: {args[i]}")
+
+    return {
+        "group_name": group,
+        "accounts": accounts or None,
+        "name": name,
+        "article_count": count,
+        "account_interval": interval,
+        "after_date": after_date,
+        "fetch_content": fetch_content,
+        "content_concurrency": concurrency,
+    }
 
 
 def _render_human_auth_start(result: AuthStartOutput) -> None:
@@ -273,20 +494,15 @@ def auth_group() -> None:
 def auth_start_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.service import start_auth
 
-    command_ctx = _build_context(
+    command_ctx = _build_click_context(
+        ctx,
         command_path="wechat_article.auth.start",
         as_json=as_json,
         as_yaml=as_yaml,
-        debug=bool(ctx.obj.get("debug")),
-        verbose=bool(ctx.obj.get("verbose")),
     )
     try:
         result = AuthStartOutput(qrcode_path=asyncio.run(start_auth()))
-        payload = success(result)
-        if command_ctx.output_mode in {"json", "yaml"}:
-            _emit_output(payload, command_ctx, compact=compact)
-        else:
-            _emit_output(result, command_ctx, compact=compact, human_renderer=_render_human_auth_start)
+        _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_auth_start)
     except Exception as exc:
         _emit_failure(command_ctx, exc, compact=compact)
 
@@ -297,20 +513,15 @@ def auth_start_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact
 def auth_confirm_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.service import confirm_auth
 
-    command_ctx = _build_context(
+    command_ctx = _build_click_context(
+        ctx,
         command_path="wechat_article.auth.confirm",
         as_json=as_json,
         as_yaml=as_yaml,
-        debug=bool(ctx.obj.get("debug")),
-        verbose=bool(ctx.obj.get("verbose")),
     )
     try:
         result = AuthConfirmOutput.model_validate(asyncio.run(confirm_auth()))
-        payload = success(result)
-        if command_ctx.output_mode in {"json", "yaml"}:
-            _emit_output(payload, command_ctx, compact=compact)
-        else:
-            _emit_output(result, command_ctx, compact=compact, human_renderer=_render_human_auth_confirm)
+        _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_auth_confirm)
     except Exception as exc:
         _emit_failure(command_ctx, exc, compact=compact)
 
@@ -321,20 +532,15 @@ def auth_confirm_command(ctx: click.Context, as_json: bool, as_yaml: bool, compa
 def auth_check_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.service import check_auth
 
-    command_ctx = _build_context(
+    command_ctx = _build_click_context(
+        ctx,
         command_path="wechat_article.auth.check",
         as_json=as_json,
         as_yaml=as_yaml,
-        debug=bool(ctx.obj.get("debug")),
-        verbose=bool(ctx.obj.get("verbose")),
     )
     try:
         result = AuthCheckOutput.model_validate(check_auth())
-        payload = success(result)
-        if command_ctx.output_mode in {"json", "yaml"}:
-            _emit_output(payload, command_ctx, compact=compact)
-        else:
-            _emit_output(result, command_ctx, compact=compact, human_renderer=_render_human_auth_check)
+        _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_auth_check)
     except Exception as exc:
         _emit_failure(command_ctx, exc, compact=compact)
 
@@ -457,50 +663,201 @@ def account_group() -> None:
 
 @account_group.command("list", **command_help_kwargs(get_command_spec("account.list")))
 @click.option("--group", "group_name")
-def account_list_command(group_name: str | None) -> None:
+@structured_output_options
+@click.pass_context
+def account_list_command(
+    ctx: click.Context,
+    group_name: str | None,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_list
+    from wechat_article_cli.service import list_accounts
 
-    _run_legacy_command(cmd_list, group_name)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.list",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_list, group_name)
+            return
+        accounts = list_accounts(group_name)
+        result = AccountListOutput(
+            group_name=group_name,
+            accounts=[_account_record(account) for account in accounts],
+            total_accounts=len(accounts),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @account_group.command("search", **command_help_kwargs(get_command_spec("account.search")))
 @click.argument("query")
-def account_search_command(query: str) -> None:
+@structured_output_options
+@click.pass_context
+def account_search_command(
+    ctx: click.Context,
+    query: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_search
+    from wechat_article_cli.service import search_accounts
 
-    _run_legacy_command(cmd_search, query)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.search",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_search, query)
+            return
+        accounts = asyncio.run(search_accounts(query))
+        result = AccountSearchOutput(
+            query=query,
+            accounts=[_search_account_record(account) for account in accounts],
+            total_accounts=len(accounts),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @account_group.command("add", **command_help_kwargs(get_command_spec("account.add")))
 @click.argument("names")
-def account_add_command(names: str) -> None:
+@structured_output_options
+@click.pass_context
+def account_add_command(
+    ctx: click.Context,
+    names: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_add
+    from wechat_article_cli.service import add_accounts
 
-    _run_legacy_command(cmd_add, names)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.add",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_add, names)
+            return
+        result_raw = add_accounts(_split_names(names))
+        result = AccountAddOutput(
+            **result_raw,
+            added_count=len(result_raw["added"]),
+            skipped_count=len(result_raw["skipped"]),
+            not_found_count=len(result_raw["not_found"]),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @account_group.command("remove", **command_help_kwargs(get_command_spec("account.remove")))
 @click.argument("name")
-def account_remove_command(name: str) -> None:
+@structured_output_options
+@click.pass_context
+def account_remove_command(
+    ctx: click.Context,
+    name: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_remove
+    from wechat_article_cli.service import remove_account
 
-    _run_legacy_command(cmd_remove, name)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.remove",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_remove, name)
+            return
+        remove_account(name)
+        _emit_result(AccountRemoveOutput(name=name), command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @account_group.command("import", **command_help_kwargs(get_command_spec("account.import")))
 @click.argument("json_path")
-def account_import_command(json_path: str) -> None:
+@structured_output_options
+@click.pass_context
+def account_import_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_import
+    from wechat_article_cli.service import import_accounts_from_json
 
-    _run_legacy_command(cmd_import, json_path)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.import",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_import, json_path)
+            return
+        input_model = AccountImportInput(json_path=json_path)
+        result_raw = import_accounts_from_json(input_model.json_path)
+        result = AccountImportOutput(json_path=str(Path(input_model.json_path).expanduser().resolve()), **result_raw)
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @account_group.command("export", **command_help_kwargs(get_command_spec("account.export")))
 @click.argument("json_path")
-def account_export_command(json_path: str) -> None:
+@structured_output_options
+@click.pass_context
+def account_export_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_account import cmd_export
+    from wechat_article_cli.service import export_accounts_to_json
 
-    _run_legacy_command(cmd_export, json_path)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.account.export",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_export, json_path)
+            return
+        input_model = AccountExportInput(json_path=json_path)
+        result = AccountExportOutput(**export_accounts_to_json(input_model.json_path))
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @cli.group("group", **group_help_kwargs(get_command_spec("group")))
@@ -509,44 +866,229 @@ def group_group() -> None:
 
 
 @group_group.command("list", **command_help_kwargs(get_command_spec("group.list")))
-def group_list_command() -> None:
+@structured_output_options
+@click.pass_context
+def group_list_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.cmd_group import cmd_list
+    from wechat_article_cli.service import list_groups
 
-    _run_legacy_command(cmd_list)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.list",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_list)
+            return
+        groups = list_groups()
+        result = GroupListOutput(
+            groups=[_group_record(group) for group in groups],
+            total_groups=len(groups),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@group_group.command("import", **command_help_kwargs(get_command_spec("group.import")))
+@click.argument("json_path")
+@structured_output_options
+@click.pass_context
+def group_import_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.cmd_group import cmd_import
+    from wechat_article_cli.service import import_groups_from_json
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.import",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_import, json_path)
+            return
+        input_model = GroupImportInput(json_path=json_path)
+        result_raw = import_groups_from_json(input_model.json_path)
+        result = GroupImportOutput(
+            json_path=str(Path(input_model.json_path).expanduser().resolve()),
+            **result_raw,
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@group_group.command("export", **command_help_kwargs(get_command_spec("group.export")))
+@click.argument("json_path")
+@structured_output_options
+@click.pass_context
+def group_export_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.cmd_group import cmd_export
+    from wechat_article_cli.service import export_groups_to_json
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.export",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_export, json_path)
+            return
+        input_model = GroupExportInput(json_path=json_path)
+        result = GroupExportOutput(**export_groups_to_json(input_model.json_path))
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @group_group.command("create", **command_help_kwargs(get_command_spec("group.create")))
 @click.argument("name")
-def group_create_command(name: str) -> None:
+@structured_output_options
+@click.pass_context
+def group_create_command(
+    ctx: click.Context,
+    name: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_group import cmd_create
+    from wechat_article_cli.service import create_group
 
-    _run_legacy_command(cmd_create, name)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.create",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_create, name)
+            return
+        create_group(name)
+        _emit_result(GroupCreateOutput(name=name), command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @group_group.command("delete", **command_help_kwargs(get_command_spec("group.delete")))
 @click.argument("name")
-def group_delete_command(name: str) -> None:
+@structured_output_options
+@click.pass_context
+def group_delete_command(
+    ctx: click.Context,
+    name: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_group import cmd_delete
+    from wechat_article_cli.service import delete_group
 
-    _run_legacy_command(cmd_delete, name)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.delete",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_delete, name)
+            return
+        removed_accounts = delete_group(name)
+        result = GroupDeleteOutput(name=name, removed_accounts=removed_accounts)
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @group_group.command("add", **command_help_kwargs(get_command_spec("group.add")))
 @click.argument("group_name")
 @click.argument("names")
-def group_add_command(group_name: str, names: str) -> None:
+@structured_output_options
+@click.pass_context
+def group_add_command(
+    ctx: click.Context,
+    group_name: str,
+    names: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_group import cmd_add
+    from wechat_article_cli.service import add_to_group
 
-    _run_legacy_command(cmd_add, group_name, names)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.add",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_add, group_name, names)
+            return
+        result_raw = add_to_group(group_name, _split_names(names))
+        result = GroupAddOutput(
+            group_name=group_name,
+            **result_raw,
+            added_count=len(result_raw["added"]),
+            skipped_count=len(result_raw["skipped"]),
+            not_in_lib_count=len(result_raw["not_in_lib"]),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @group_group.command("remove", **command_help_kwargs(get_command_spec("group.remove")))
 @click.argument("group_name")
 @click.argument("name")
-def group_remove_command(group_name: str, name: str) -> None:
+@structured_output_options
+@click.pass_context
+def group_remove_command(
+    ctx: click.Context,
+    group_name: str,
+    name: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_group import cmd_remove_account
+    from wechat_article_cli.service import remove_from_group
 
-    _run_legacy_command(cmd_remove_account, group_name, name)
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.group.remove",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_remove_account, group_name, name)
+            return
+        remove_from_group(group_name, name)
+        result = GroupRemoveOutput(group_name=group_name, name=name)
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @cli.group("task", **group_help_kwargs(get_command_spec("task")))
@@ -556,33 +1098,120 @@ def task_group() -> None:
 
 @task_group.command("create", context_settings={"ignore_unknown_options": True}, **command_help_kwargs(get_command_spec("task.create")))
 @click.argument("raw_args", nargs=-1, type=click.UNPROCESSED)
-def task_create_command(raw_args: tuple[str, ...]) -> None:
+@structured_output_options
+@click.pass_context
+def task_create_command(
+    ctx: click.Context,
+    raw_args: tuple[str, ...],
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_task import cmd_create
+    from wechat_article_cli.service import create_task
 
-    _run_legacy_command(cmd_create, list(raw_args))
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.task.create",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_create, list(raw_args))
+            return
+        kwargs = _parse_task_create_args(raw_args)
+        task = create_task(**kwargs)
+        _emit_result(TaskCreateOutput(task=_task_record(task)), command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @task_group.command("list", **command_help_kwargs(get_command_spec("task.list")))
-def task_list_command() -> None:
+@structured_output_options
+@click.pass_context
+def task_list_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.cmd_task import cmd_list
+    from wechat_article_cli.service import get_all_tasks
 
-    _run_legacy_command(cmd_list, [])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.task.list",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_list, [])
+            return
+        tasks = get_all_tasks()
+        result = TaskListOutput(tasks=[_task_record(task) for task in tasks], total_tasks=len(tasks))
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @task_group.command("info", **command_help_kwargs(get_command_spec("task.info")))
 @click.argument("task_id")
-def task_info_command(task_id: str) -> None:
+@structured_output_options
+@click.pass_context
+def task_info_command(
+    ctx: click.Context,
+    task_id: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_task import cmd_info
+    from wechat_article_cli.service import get_task
 
-    _run_legacy_command(cmd_info, [task_id])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.task.info",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_info, [task_id])
+            return
+        task = get_task(task_id)
+        _emit_result(TaskInfoOutput(task=_task_record(task)), command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @task_group.command("run", **command_help_kwargs(get_command_spec("task.run")))
 @click.argument("task_id")
-def task_run_command(task_id: str) -> None:
+@structured_output_options
+@click.pass_context
+def task_run_command(
+    ctx: click.Context,
+    task_id: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_task import cmd_run
+    from wechat_article_cli.service import start_run
+    from wechat_article_cli.task_runner import run_task
 
-    _run_legacy_command(cmd_run, [task_id])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.task.run",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_run, [task_id])
+            return
+        _route_logs_to_stderr(debug=command_ctx.debug, verbose=command_ctx.verbose)
+        run = start_run(task_id)
+        run = asyncio.run(run_task(run))
+        _emit_result(TaskRunOutput(run=_run_record(run)), command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @cli.group("run", **group_help_kwargs(get_command_spec("run")))
@@ -591,27 +1220,99 @@ def run_group() -> None:
 
 
 @run_group.command("list", **command_help_kwargs(get_command_spec("run.list")))
-def run_list_command() -> None:
+@structured_output_options
+@click.pass_context
+def run_list_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
     from wechat_article_cli.cmd_run import cmd_list
+    from wechat_article_cli.service import get_all_runs
 
-    _run_legacy_command(cmd_list, [])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.run.list",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_list, [])
+            return
+        runs = get_all_runs()
+        result = RunListOutput(runs=[_run_record(run) for run in runs], total_runs=len(runs))
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @run_group.command("status", **command_help_kwargs(get_command_spec("run.status")))
 @click.argument("run_id")
-def run_status_command(run_id: str) -> None:
+@structured_output_options
+@click.pass_context
+def run_status_command(
+    ctx: click.Context,
+    run_id: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_run import cmd_status
+    from wechat_article_cli.service import get_run
 
-    _run_legacy_command(cmd_status, [run_id])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.run.status",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_status, [run_id])
+            return
+        run = get_run(run_id)
+        failed_articles = [a for a in run.articles if a.get("content_status") == "failed"]
+        result = RunStatusOutput(run=_run_record(run), failed_articles=failed_articles)
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @run_group.command("export", **command_help_kwargs(get_command_spec("run.export")))
 @click.argument("run_id")
 @click.option("--format", "fmt", type=click.Choice(["json", "csv", "excel"]), default="json")
-def run_export_command(run_id: str, fmt: str) -> None:
+@structured_output_options
+@click.pass_context
+def run_export_command(
+    ctx: click.Context,
+    run_id: str,
+    fmt: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
     from wechat_article_cli.cmd_run import cmd_export
+    from wechat_article_cli.export import export_run
+    from wechat_article_cli.service import get_run
 
-    _run_legacy_command(cmd_export, [run_id, "--format", fmt])
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.run.export",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        if command_ctx.output_mode == "human":
+            _run_legacy_command(cmd_export, [run_id, "--format", fmt])
+            return
+        run = get_run(run_id)
+        path = export_run(run, fmt=fmt)
+        result = RunExportOutput(
+            run_id=run.run_id,
+            format=fmt,
+            path=str(path),
+            article_count=len(run.articles),
+        )
+        _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
 
 
 @cli.command("doctor", **command_help_kwargs(get_command_spec("doctor")))
@@ -689,29 +1390,31 @@ def inspect_command(
         "auth.confirm": None,
         "auth.check": None,
         "account": None,
-        "account.list": None,
-        "account.search": None,
-        "account.add": None,
-        "account.remove": None,
-        "account.import": None,
-        "account.export": None,
+        "account.list": AccountListInput,
+        "account.search": AccountSearchInput,
+        "account.add": AccountAddInput,
+        "account.remove": AccountRemoveInput,
+        "account.import": AccountImportInput,
+        "account.export": AccountExportInput,
         "group": None,
         "group.list": None,
-        "group.create": None,
-        "group.delete": None,
-        "group.add": None,
-        "group.remove": None,
+        "group.import": GroupImportInput,
+        "group.export": GroupExportInput,
+        "group.create": GroupCreateInput,
+        "group.delete": GroupDeleteInput,
+        "group.add": GroupAddInput,
+        "group.remove": GroupRemoveInput,
         "article.list": ArticleListInput,
         "article.content": ArticleContentInput,
         "task": None,
-        "task.create": None,
+        "task.create": TaskCreateInput,
         "task.list": None,
-        "task.info": None,
-        "task.run": None,
+        "task.info": TaskIdInput,
+        "task.run": TaskIdInput,
         "run": None,
         "run.list": None,
-        "run.status": None,
-        "run.export": None,
+        "run.status": RunIdInput,
+        "run.export": RunExportInput,
         "doctor": None,
     }
     output_model_map = {
@@ -719,29 +1422,31 @@ def inspect_command(
         "auth.confirm": AuthConfirmOutput,
         "auth.check": AuthCheckOutput,
         "account": None,
-        "account.list": None,
-        "account.search": None,
-        "account.add": None,
-        "account.remove": None,
-        "account.import": None,
-        "account.export": None,
+        "account.list": AccountListOutput,
+        "account.search": AccountSearchOutput,
+        "account.add": AccountAddOutput,
+        "account.remove": AccountRemoveOutput,
+        "account.import": AccountImportOutput,
+        "account.export": AccountExportOutput,
         "group": None,
-        "group.list": None,
-        "group.create": None,
-        "group.delete": None,
-        "group.add": None,
-        "group.remove": None,
+        "group.list": GroupListOutput,
+        "group.import": GroupImportOutput,
+        "group.export": GroupExportOutput,
+        "group.create": GroupCreateOutput,
+        "group.delete": GroupDeleteOutput,
+        "group.add": GroupAddOutput,
+        "group.remove": GroupRemoveOutput,
         "article.list": ArticleListOutput,
         "article.content": ArticleContentOutput,
         "task": None,
-        "task.create": None,
-        "task.list": None,
-        "task.info": None,
-        "task.run": None,
+        "task.create": TaskCreateOutput,
+        "task.list": TaskListOutput,
+        "task.info": TaskInfoOutput,
+        "task.run": TaskRunOutput,
         "run": None,
-        "run.list": None,
-        "run.status": None,
-        "run.export": None,
+        "run.list": RunListOutput,
+        "run.status": RunStatusOutput,
+        "run.export": RunExportOutput,
         "doctor": DoctorPayload,
     }
     report = build_inspect_report(
@@ -779,29 +1484,31 @@ def schema_command(
         "auth.confirm": None,
         "auth.check": None,
         "account": None,
-        "account.list": None,
-        "account.search": None,
-        "account.add": None,
-        "account.remove": None,
-        "account.import": None,
-        "account.export": None,
+        "account.list": AccountListInput,
+        "account.search": AccountSearchInput,
+        "account.add": AccountAddInput,
+        "account.remove": AccountRemoveInput,
+        "account.import": AccountImportInput,
+        "account.export": AccountExportInput,
         "group": None,
         "group.list": None,
-        "group.create": None,
-        "group.delete": None,
-        "group.add": None,
-        "group.remove": None,
+        "group.import": GroupImportInput,
+        "group.export": GroupExportInput,
+        "group.create": GroupCreateInput,
+        "group.delete": GroupDeleteInput,
+        "group.add": GroupAddInput,
+        "group.remove": GroupRemoveInput,
         "article.list": ArticleListInput,
         "article.content": ArticleContentInput,
         "task": None,
-        "task.create": None,
+        "task.create": TaskCreateInput,
         "task.list": None,
-        "task.info": None,
-        "task.run": None,
+        "task.info": TaskIdInput,
+        "task.run": TaskIdInput,
         "run": None,
         "run.list": None,
-        "run.status": None,
-        "run.export": None,
+        "run.status": RunIdInput,
+        "run.export": RunExportInput,
         "doctor": None,
     }
     output_model_map = {
@@ -809,29 +1516,31 @@ def schema_command(
         "auth.confirm": AuthConfirmOutput,
         "auth.check": AuthCheckOutput,
         "account": None,
-        "account.list": None,
-        "account.search": None,
-        "account.add": None,
-        "account.remove": None,
-        "account.import": None,
-        "account.export": None,
+        "account.list": AccountListOutput,
+        "account.search": AccountSearchOutput,
+        "account.add": AccountAddOutput,
+        "account.remove": AccountRemoveOutput,
+        "account.import": AccountImportOutput,
+        "account.export": AccountExportOutput,
         "group": None,
-        "group.list": None,
-        "group.create": None,
-        "group.delete": None,
-        "group.add": None,
-        "group.remove": None,
+        "group.list": GroupListOutput,
+        "group.import": GroupImportOutput,
+        "group.export": GroupExportOutput,
+        "group.create": GroupCreateOutput,
+        "group.delete": GroupDeleteOutput,
+        "group.add": GroupAddOutput,
+        "group.remove": GroupRemoveOutput,
         "article.list": ArticleListOutput,
         "article.content": ArticleContentOutput,
         "task": None,
-        "task.create": None,
-        "task.list": None,
-        "task.info": None,
-        "task.run": None,
+        "task.create": TaskCreateOutput,
+        "task.list": TaskListOutput,
+        "task.info": TaskInfoOutput,
+        "task.run": TaskRunOutput,
         "run": None,
-        "run.list": None,
-        "run.status": None,
-        "run.export": None,
+        "run.list": RunListOutput,
+        "run.status": RunStatusOutput,
+        "run.export": RunExportOutput,
         "doctor": DoctorPayload,
     }
     report = build_schema_report(

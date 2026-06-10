@@ -19,6 +19,7 @@ from wechat_article_cli.api import WeChatClient
 from wechat_article_cli.storage import (
     AccountGroup,
     Credentials,
+    Groups,
     SavedAccount,
     find_account_by_name,
     is_credentials_valid,
@@ -377,6 +378,106 @@ def remove_from_group(group_name: str, name: str) -> None:
 
 def list_groups() -> list[AccountGroup]:
     return load_groups().groups
+
+
+def import_groups_from_json(json_path: str) -> dict:
+    """从 JSON 文件批量导入分组。返回导入、更新、跳过和无效数量。"""
+    path = Path(json_path).expanduser().resolve()
+    if not path.exists():
+        raise ValueError(f"JSON 文件不存在：{path}")
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON 格式错误：{exc}") from exc
+
+    if isinstance(raw, dict) and isinstance(raw.get("groups"), list):
+        raw = raw["groups"]
+    if not isinstance(raw, list):
+        raise ValueError("导入文件必须是分组数组 JSON，或对象中包含 groups 数组")
+
+    groups = load_groups()
+    by_name = {group.name: group for group in groups.groups}
+    imported = 0
+    updated = 0
+    skipped = 0
+    invalid = 0
+    invalid_accounts = 0
+
+    for item in raw:
+        if not isinstance(item, dict):
+            invalid += 1
+            continue
+
+        name = str(item.get("name", "")).strip()
+        raw_accounts = item.get("accounts", [])
+        if not name or not isinstance(raw_accounts, list):
+            invalid += 1
+            continue
+
+        accounts: list[str] = []
+        seen_accounts: set[str] = set()
+        for raw_account in raw_accounts:
+            if not isinstance(raw_account, str):
+                invalid_accounts += 1
+                continue
+            account_name = raw_account.strip()
+            if not account_name:
+                invalid_accounts += 1
+                continue
+            if account_name in seen_accounts:
+                continue
+            accounts.append(account_name)
+            seen_accounts.add(account_name)
+
+        existing = by_name.get(name)
+        if existing is None:
+            created = AccountGroup(name=name, accounts=accounts)
+            groups.groups.append(created)
+            by_name[name] = created
+            imported += 1
+            continue
+
+        if existing.accounts == accounts:
+            skipped += 1
+            continue
+
+        existing.accounts = accounts
+        updated += 1
+
+    if imported or updated:
+        save_groups(groups)
+
+    return {
+        "imported": imported,
+        "updated": updated,
+        "skipped": skipped,
+        "invalid": invalid,
+        "invalid_accounts": invalid_accounts,
+        "total_groups": len(groups.groups),
+    }
+
+
+def export_groups_to_json(json_path: str) -> dict:
+    """把本地分组导出为 JSON 数组。"""
+    path = Path(json_path).expanduser().resolve()
+    groups = Groups(groups=list_groups())
+    payload = [
+        {
+            "name": group.name,
+            "accounts": group.accounts,
+        }
+        for group in groups.groups
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "exported": len(payload),
+        "json_path": str(path),
+    }
 
 
 # --- 文章获取 ---

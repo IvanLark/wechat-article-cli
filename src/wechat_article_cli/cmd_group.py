@@ -2,6 +2,8 @@
 
 用法：
     wechat-article group list                           列出所有分组
+    wechat-article group import <json路径>              从 JSON 批量导入分组
+    wechat-article group export <json路径>              导出分组到 JSON
     wechat-article group create <分组名>                创建分组
     wechat-article group delete <分组名>                删除分组
     wechat-article group add <分组名> <名称>[,名称,...] 将公众号添加到分组
@@ -45,6 +47,22 @@ def cmd_create(name: str) -> None:
     logger.info("添加公众号到分组: wechat-article group add {} <名称>", name)
 
 
+def cmd_import(json_path: str) -> None:
+    result = service.import_groups_from_json(json_path)
+    logger.info("批量导入分组完成：{}", json_path)
+    logger.info("新增：{}", result["imported"])
+    logger.info("更新：{}", result["updated"])
+    logger.info("跳过：{}", result["skipped"])
+    logger.info("无效分组：{}", result["invalid"])
+    logger.info("无效成员：{}", result["invalid_accounts"])
+    logger.info("当前分组总数：{}", result["total_groups"])
+
+
+def cmd_export(json_path: str) -> None:
+    result = service.export_groups_to_json(json_path)
+    logger.info("已导出 {} 个分组到：{}", result["exported"], result["json_path"])
+
+
 def cmd_delete(name: str) -> None:
     count = service.delete_group(name)
     logger.info("已删除分组「{}」（含 {} 个公众号）", name, count)
@@ -77,6 +95,16 @@ def dispatch(args: list[str]) -> None:
     try:
         if cmd == "list":
             cmd_list()
+        elif cmd == "import":
+            if not rest:
+                logger.error("用法: wechat-article group import <json路径>")
+                sys.exit(1)
+            cmd_import(rest[0])
+        elif cmd == "export":
+            if not rest:
+                logger.error("用法: wechat-article group export <json路径>")
+                sys.exit(1)
+            cmd_export(rest[0])
         elif cmd == "create":
             if not rest:
                 logger.error("用法: wechat-article group create <分组名>")
@@ -98,7 +126,7 @@ def dispatch(args: list[str]) -> None:
                 sys.exit(1)
             cmd_remove_account(rest[0], rest[1])
         else:
-            logger.error("未知命令: group {}，可选: list, create, delete, add, remove", cmd)
+            logger.error("未知命令: group {}，可选: list, import, export, create, delete, add, remove", cmd)
             sys.exit(1)
     except ValueError as e:
         logger.error("{}", e)

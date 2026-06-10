@@ -154,8 +154,10 @@ def load_saved_accounts() -> SavedAccounts:
         return SavedAccounts()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return SavedAccounts(accounts=data)
         return SavedAccounts(**data)
-    except (json.JSONDecodeError, ValueError, KeyError):
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         return SavedAccounts()
 
 
@@ -198,8 +200,10 @@ def load_groups() -> Groups:
         return Groups()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return Groups(groups=data)
         return Groups(**data)
-    except (json.JSONDecodeError, ValueError, KeyError):
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         return Groups()
 
 
