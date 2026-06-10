@@ -29,6 +29,9 @@ INSPECTABLE_COMMANDS = (
     "account.remove",
     "account.import",
     "account.export",
+    "library",
+    "library.import",
+    "library.export",
     "group",
     "group.list",
     "group.import",
@@ -248,6 +251,62 @@ ACCOUNT_EXPORT_SPEC = CommandSpec(
     ],
     examples=[
         ExampleSpec(command=f"{CLI_NAME} account export ./公众号列表.json", description="导出本地库"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=False,
+)
+
+
+LIBRARY_SPEC = CommandSpec(
+    name="library",
+    path="wechat_article.library",
+    summary="一键导入、导出公众号库和分组",
+    when_to_use="当你希望把账号库和分组配置作为一个整体备份或迁移时。",
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} library export ./wechat-library.json", description="导出账号库和分组"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
+    next_steps=[
+        f"备份当前配置时，执行 `{CLI_NAME} library export <json路径>`",
+        f"迁移到新工作区时，执行 `{CLI_NAME} library import <json路径>`",
+    ],
+)
+
+
+LIBRARY_IMPORT_SPEC = CommandSpec(
+    name="library.import",
+    path="wechat_article.library.import",
+    summary="从一个 JSON 文件导入公众号库和分组",
+    when_to_use="当你拿到 library export 生成的 JSON，希望一次恢复账号库和分组时。",
+    arguments=[
+        ArgumentSpec(name="json_path", description="公众号库 JSON 文件路径", required=True, positional=True, value_type="path"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} library import ./wechat-library.json", description="一键导入账号库和分组"),
+    ],
+    next_steps=[
+        f"导入后可执行 `{CLI_NAME} account list --json` 和 `{CLI_NAME} group list --json` 检查结果",
+        f"准备抓取时，可执行 `{CLI_NAME} task create --group <分组名>`",
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
+)
+
+
+LIBRARY_EXPORT_SPEC = CommandSpec(
+    name="library.export",
+    path="wechat_article.library.export",
+    summary="把公众号库和分组导出到一个 JSON 文件",
+    when_to_use="当你希望备份或迁移当前账号库和分组配置时。",
+    arguments=[
+        ArgumentSpec(name="json_path", description="导出的 JSON 文件路径", required=True, positional=True, value_type="path"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} library export ./wechat-library.json", description="一键导出账号库和分组"),
     ],
     output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
@@ -671,6 +730,9 @@ CAPABILITY_SPEC = CapabilitySpec(
         ACCOUNT_REMOVE_SPEC,
         ACCOUNT_IMPORT_SPEC,
         ACCOUNT_EXPORT_SPEC,
+        LIBRARY_SPEC,
+        LIBRARY_IMPORT_SPEC,
+        LIBRARY_EXPORT_SPEC,
         GROUP_SPEC,
         GROUP_LIST_SPEC,
         GROUP_IMPORT_SPEC,
@@ -718,6 +780,9 @@ COMMAND_SPECS = {
     "account.remove": ACCOUNT_REMOVE_SPEC,
     "account.import": ACCOUNT_IMPORT_SPEC,
     "account.export": ACCOUNT_EXPORT_SPEC,
+    "library": LIBRARY_SPEC,
+    "library.import": LIBRARY_IMPORT_SPEC,
+    "library.export": LIBRARY_EXPORT_SPEC,
     "group": GROUP_SPEC,
     "group.list": GROUP_LIST_SPEC,
     "group.import": GROUP_IMPORT_SPEC,

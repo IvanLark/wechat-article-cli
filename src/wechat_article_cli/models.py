@@ -168,6 +168,8 @@ class GroupImportOutput(BaseModel):
     skipped: int = 0
     invalid: int = 0
     invalid_accounts: int = 0
+    missing_accounts: list[str] = Field(default_factory=list)
+    missing_account_count: int = 0
     total_groups: int = 0
 
 
@@ -239,6 +241,60 @@ class GroupAddInput(BaseModel):
 class GroupRemoveInput(BaseModel):
     group_name: str
     name: str
+
+
+class LibraryImportInput(BaseModel):
+    json_path: str
+
+    @field_validator("json_path")
+    @classmethod
+    def validate_json_path(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("json_path 不能为空")
+        return normalized
+
+
+class LibraryExportInput(BaseModel):
+    json_path: str
+
+    @field_validator("json_path")
+    @classmethod
+    def validate_json_path(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("json_path 不能为空")
+        return normalized
+
+
+class AccountImportStats(BaseModel):
+    imported: int = 0
+    updated: int = 0
+    skipped: int = 0
+    invalid: int = 0
+
+
+class GroupImportStats(BaseModel):
+    imported: int = 0
+    updated: int = 0
+    skipped: int = 0
+    invalid: int = 0
+    invalid_accounts: int = 0
+    missing_accounts: list[str] = Field(default_factory=list)
+    missing_account_count: int = 0
+    total_groups: int = 0
+
+
+class LibraryImportOutput(BaseModel):
+    json_path: str
+    accounts: AccountImportStats
+    groups: GroupImportStats
+
+
+class LibraryExportOutput(BaseModel):
+    json_path: str
+    exported_accounts: int = 0
+    exported_groups: int = 0
 
 
 class ArticleListInput(BaseModel):

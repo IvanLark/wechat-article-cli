@@ -95,6 +95,62 @@ def test_account_group_and_task_structured_output(tmp_path: Path) -> None:
     )
     assert listed_imported_groups["groups"][0]["accounts"] == ["测试号"]
 
+    library_path = tmp_path / "wechat-library.json"
+    exported_library = _invoke_json(
+        runner,
+        tmp_path,
+        ["library", "export", str(library_path), "--json", "--compact"],
+    )
+    assert exported_library["exported_accounts"] == 1
+    assert exported_library["exported_groups"] == 1
+    library_data = json.loads(library_path.read_text(encoding="utf-8"))
+    assert library_data["schema_version"] == "1"
+    assert library_data["accounts"][0]["name"] == "测试号"
+    assert library_data["groups"] == [{"name": "测试分组", "accounts": ["测试号"]}]
+
+    library_home = tmp_path / "library-home"
+    imported_library = _invoke_json(
+        runner,
+        library_home,
+        ["library", "import", str(library_path), "--json", "--compact"],
+    )
+    assert imported_library["accounts"]["imported"] == 1
+    assert imported_library["groups"]["imported"] == 1
+    assert imported_library["groups"]["missing_accounts"] == []
+
+    library_accounts = _invoke_json(
+        runner,
+        library_home,
+        ["account", "list", "--json", "--compact"],
+    )
+    assert library_accounts["accounts"][0]["fakeid"] == "fakeid-1"
+
+    library_groups = _invoke_json(
+        runner,
+        library_home,
+        ["group", "list", "--json", "--compact"],
+    )
+    assert library_groups["groups"][0]["accounts"] == ["测试号"]
+
+    library_task = _invoke_json(
+        runner,
+        library_home,
+        [
+            "task",
+            "create",
+            "--group",
+            "测试分组",
+            "--name",
+            "导入后任务",
+            "--count",
+            "1",
+            "--no-content",
+            "--json",
+            "--compact",
+        ],
+    )
+    assert library_task["task"]["config"]["group"] == "测试分组"
+
     task = _invoke_json(
         runner,
         tmp_path,
@@ -191,3 +247,19 @@ def test_schema_exposes_structured_contracts(tmp_path: Path) -> None:
     group_export = _invoke_json(runner, tmp_path, ["schema", "group.export", "--json", "--compact"])
     assert group_export["input_schema"]["title"] == "GroupExportInput"
     assert group_export["output_schema"]["title"] == "GroupExportOutput"
+
+    library_import = _invoke_json(
+        runner,
+        tmp_path,
+        ["schema", "library.import", "--json", "--compact"],
+    )
+    assert library_import["input_schema"]["title"] == "LibraryImportInput"
+    assert library_import["output_schema"]["title"] == "LibraryImportOutput"
+
+    library_export = _invoke_json(
+        runner,
+        tmp_path,
+        ["schema", "library.export", "--json", "--compact"],
+    )
+    assert library_export["input_schema"]["title"] == "LibraryExportInput"
+    assert library_export["output_schema"]["title"] == "LibraryExportOutput"

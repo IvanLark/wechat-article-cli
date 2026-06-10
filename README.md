@@ -97,7 +97,40 @@ export WECHAT_ARTICLE_HOME="$HOME/.wechat-article"
 
 ## 备份和迁移
 
-公众号本地库支持导入、导出：
+推荐使用 `library` 一键导出和导入公众号库。它会把账号详情和分组配置放在同一个 JSON 文件里：
+
+```bash
+wechat-article library export ./wechat-library.json
+wechat-article library import ./wechat-library.json
+```
+
+导出的 JSON 结构大致如下：
+
+```json
+{
+  "schema_version": "1",
+  "exported_at": "2026-06-10T00:00:00+00:00",
+  "accounts": [
+    {
+      "fakeid": "fakeid_xxx",
+      "name": "AI新榜",
+      "avatar": "https://...",
+      "signature": "公众号简介",
+      "added_at": "2026-06-10T00:00:00+00:00"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Agent资讯",
+      "accounts": ["AI新榜"]
+    }
+  ]
+}
+```
+
+`library import` 会先导入 `accounts`，再导入 `groups`。这样分组里的公众号会带着完整 `fakeid` 一起进入本地库，后续才能直接用于文章抓取和任务执行。
+
+如果只想单独处理公众号本地库，也可以使用 account 命令：
 
 ```bash
 wechat-article account export ./accounts.json
@@ -117,12 +150,14 @@ wechat-article account import ./accounts.json
 ]
 ```
 
-分组配置也支持导入、导出：
+如果只想单独处理分组配置，也可以使用 group 命令：
 
 ```bash
 wechat-article group export ./groups.json
 wechat-article group import ./groups.json
 ```
+
+单独导入分组时，只会导入分组名和公众号名称。它不会补齐账号的 `fakeid`。如果要迁移到新环境，优先使用 `library export/import`。
 
 分组 JSON 可以是数组，也可以是带 `groups` 字段的对象：
 

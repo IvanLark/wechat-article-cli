@@ -77,6 +77,10 @@ from wechat_article_cli.models import (
     GroupRecord,
     GroupRemoveInput,
     GroupRemoveOutput,
+    LibraryExportInput,
+    LibraryExportOutput,
+    LibraryImportInput,
+    LibraryImportOutput,
     RunExportInput,
     RunExportOutput,
     RunIdInput,
@@ -383,6 +387,33 @@ def _render_human_auth_check(result: AuthCheckOutput) -> None:
         click.echo(f"过期时间：{result.expires_at}")
     if result.remaining_seconds is not None:
         click.echo(f"剩余有效期：{result.remaining_seconds} 秒")
+
+
+def _render_human_library_import(result: LibraryImportOutput) -> None:
+    click.echo("公众号库导入完成")
+    click.echo(f"文件：{result.json_path}")
+    click.echo("账号：")
+    click.echo(f"  新增：{result.accounts.imported}")
+    click.echo(f"  更新：{result.accounts.updated}")
+    click.echo(f"  跳过：{result.accounts.skipped}")
+    click.echo(f"  无效：{result.accounts.invalid}")
+    click.echo("分组：")
+    click.echo(f"  新增：{result.groups.imported}")
+    click.echo(f"  更新：{result.groups.updated}")
+    click.echo(f"  跳过：{result.groups.skipped}")
+    click.echo(f"  无效分组：{result.groups.invalid}")
+    click.echo(f"  无效成员：{result.groups.invalid_accounts}")
+    click.echo(f"  当前分组总数：{result.groups.total_groups}")
+    if result.groups.missing_accounts:
+        click.echo("分组中有成员缺少账号详情，已跳过：")
+        click.echo("  " + "、".join(result.groups.missing_accounts))
+
+
+def _render_human_library_export(result: LibraryExportOutput) -> None:
+    click.echo("公众号库已导出")
+    click.echo(f"文件：{result.json_path}")
+    click.echo(f"账号：{result.exported_accounts}")
+    click.echo(f"分组：{result.exported_groups}")
 
 
 def _render_human_article_list(result: ArticleListOutput) -> None:
@@ -856,6 +887,75 @@ def account_export_command(
         input_model = AccountExportInput(json_path=json_path)
         result = AccountExportOutput(**export_accounts_to_json(input_model.json_path))
         _emit_result(result, command_ctx, compact=compact)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@cli.group("library", **group_help_kwargs(get_command_spec("library")))
+def library_group() -> None:
+    pass
+
+
+@library_group.command("import", **command_help_kwargs(get_command_spec("library.import")))
+@click.argument("json_path")
+@structured_output_options
+@click.pass_context
+def library_import_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.service import import_library_from_json
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.library.import",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        input_model = LibraryImportInput(json_path=json_path)
+        result = LibraryImportOutput(**import_library_from_json(input_model.json_path))
+        _emit_result(
+            result,
+            command_ctx,
+            compact=compact,
+            human_renderer=_render_human_library_import,
+        )
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@library_group.command("export", **command_help_kwargs(get_command_spec("library.export")))
+@click.argument("json_path")
+@structured_output_options
+@click.pass_context
+def library_export_command(
+    ctx: click.Context,
+    json_path: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.service import export_library_to_json
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.library.export",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        input_model = LibraryExportInput(json_path=json_path)
+        result = LibraryExportOutput(**export_library_to_json(input_model.json_path))
+        _emit_result(
+            result,
+            command_ctx,
+            compact=compact,
+            human_renderer=_render_human_library_export,
+        )
     except Exception as exc:
         _emit_failure(command_ctx, exc, compact=compact)
 
@@ -1396,6 +1496,9 @@ def inspect_command(
         "account.remove": AccountRemoveInput,
         "account.import": AccountImportInput,
         "account.export": AccountExportInput,
+        "library": None,
+        "library.import": LibraryImportInput,
+        "library.export": LibraryExportInput,
         "group": None,
         "group.list": None,
         "group.import": GroupImportInput,
@@ -1428,6 +1531,9 @@ def inspect_command(
         "account.remove": AccountRemoveOutput,
         "account.import": AccountImportOutput,
         "account.export": AccountExportOutput,
+        "library": None,
+        "library.import": LibraryImportOutput,
+        "library.export": LibraryExportOutput,
         "group": None,
         "group.list": GroupListOutput,
         "group.import": GroupImportOutput,
@@ -1490,6 +1596,9 @@ def schema_command(
         "account.remove": AccountRemoveInput,
         "account.import": AccountImportInput,
         "account.export": AccountExportInput,
+        "library": None,
+        "library.import": LibraryImportInput,
+        "library.export": LibraryExportInput,
         "group": None,
         "group.list": None,
         "group.import": GroupImportInput,
@@ -1522,6 +1631,9 @@ def schema_command(
         "account.remove": AccountRemoveOutput,
         "account.import": AccountImportOutput,
         "account.export": AccountExportOutput,
+        "library": None,
+        "library.import": LibraryImportOutput,
+        "library.export": LibraryExportOutput,
         "group": None,
         "group.list": GroupListOutput,
         "group.import": GroupImportOutput,

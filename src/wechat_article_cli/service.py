@@ -191,6 +191,10 @@ def import_accounts_from_json(json_path: str) -> dict:
     if not isinstance(raw, list):
         raise ValueError("导入文件必须是公众号数组 JSON，或对象中包含 accounts 数组")
 
+    return _import_accounts(raw)
+
+
+def _import_accounts(raw: list[object]) -> dict:
     saved = load_saved_accounts()
     imported = 0
     updated = 0
@@ -269,16 +273,7 @@ def import_accounts_from_json(json_path: str) -> dict:
 def export_accounts_to_json(json_path: str) -> dict:
     """把本地库中的公众号导出为 JSON 数组。"""
     path = Path(json_path).expanduser().resolve()
-    saved = load_saved_accounts()
-    payload = [
-        {
-            "fakeid": account.fakeid,
-            "name": account.name,
-            "avatar": account.avatar,
-            "signature": account.signature,
-        }
-        for account in saved.accounts
-    ]
+    payload = _export_accounts_payload()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -288,6 +283,20 @@ def export_accounts_to_json(json_path: str) -> dict:
         "exported": len(payload),
         "json_path": str(path),
     }
+
+
+def _export_accounts_payload() -> list[dict]:
+    saved = load_saved_accounts()
+    return [
+        {
+            "fakeid": account.fakeid,
+            "name": account.name,
+            "avatar": account.avatar,
+            "signature": account.signature,
+            "added_at": account.added_at,
+        }
+        for account in saved.accounts
+    ]
 
 
 def remove_account(name: str) -> None:
@@ -396,13 +405,20 @@ def import_groups_from_json(json_path: str) -> dict:
     if not isinstance(raw, list):
         raise ValueError("导入文件必须是分组数组 JSON，或对象中包含 groups 数组")
 
+    return _import_groups(raw)
+
+
+def _import_groups(raw: list[object], *, require_known_accounts: bool = False) -> dict:
     groups = load_groups()
     by_name = {group.name: group for group in groups.groups}
+    known_accounts = {account.name for account in load_saved_accounts().accounts}
     imported = 0
     updated = 0
     skipped = 0
     invalid = 0
     invalid_accounts = 0
+    missing_accounts: list[str] = []
+    seen_missing_accounts: set[str] = set()
 
     for item in raw:
         if not isinstance(item, dict):
@@ -424,6 +440,11 @@ def import_groups_from_json(json_path: str) -> dict:
             account_name = raw_account.strip()
             if not account_name:
                 invalid_accounts += 1
+                continue
+            if require_known_accounts and account_name not in known_accounts:
+                if account_name not in seen_missing_accounts:
+                    missing_accounts.append(account_name)
+                    seen_missing_accounts.add(account_name)
                 continue
             if account_name in seen_accounts:
                 continue
@@ -454,6 +475,8 @@ def import_groups_from_json(json_path: str) -> dict:
         "skipped": skipped,
         "invalid": invalid,
         "invalid_accounts": invalid_accounts,
+        "missing_accounts": missing_accounts,
+        "missing_account_count": len(missing_accounts),
         "total_groups": len(groups.groups),
     }
 
@@ -461,14 +484,7 @@ def import_groups_from_json(json_path: str) -> dict:
 def export_groups_to_json(json_path: str) -> dict:
     """把本地分组导出为 JSON 数组。"""
     path = Path(json_path).expanduser().resolve()
-    groups = Groups(groups=list_groups())
-    payload = [
-        {
-            "name": group.name,
-            "accounts": group.accounts,
-        }
-        for group in groups.groups
-    ]
+    payload = _export_groups_payload()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -477,6 +493,69 @@ def export_groups_to_json(json_path: str) -> dict:
     return {
         "exported": len(payload),
         "json_path": str(path),
+    }
+
+
+def _export_groups_payload() -> list[dict]:
+    groups = Groups(groups=list_groups())
+    return [
+        {
+            "name": group.name,
+            "accounts": group.accounts,
+        }
+        for group in groups.groups
+    ]
+
+
+def export_library_to_json(json_path: str) -> dict:
+    """一键导出公众号库和分组配置。"""
+    path = Path(json_path).expanduser().resolve()
+    accounts = _export_accounts_payload()
+    groups = _export_groups_payload()
+    payload = {
+        "schema_version": "1",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "accounts": accounts,
+        "groups": groups,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "json_path": str(path),
+        "exported_accounts": len(accounts),
+        "exported_groups": len(groups),
+    }
+
+
+def import_library_from_json(json_path: str) -> dict:
+    """一键导入公众号库和分组配置。先导账号，再导分组。"""
+    path = Path(json_path).expanduser().resolve()
+    if not path.exists():
+        raise ValueError(f"JSON 文件不存在：{path}")
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON 格式错误：{exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise ValueError("导入文件必须是包含 accounts 和 groups 的 JSON 对象")
+    accounts_raw = raw.get("accounts")
+    groups_raw = raw.get("groups")
+    if not isinstance(accounts_raw, list):
+        raise ValueError("导入文件缺少 accounts 数组")
+    if not isinstance(groups_raw, list):
+        raise ValueError("导入文件缺少 groups 数组")
+
+    accounts_result = _import_accounts(accounts_raw)
+    groups_result = _import_groups(groups_raw, require_known_accounts=True)
+    return {
+        "json_path": str(path),
+        "accounts": accounts_result,
+        "groups": groups_result,
     }
 
 
