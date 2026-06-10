@@ -6,7 +6,6 @@
 """
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from urllib.parse import quote
@@ -42,7 +41,8 @@ class ProxyManager:
     ):
         if not proxies:
             raise ValueError(
-                "代理池为空。请在 .env 中设置 WECHAT_PROXY_URL（多个用逗号分隔）"
+                "代理池为空。请执行 wechat-article config set proxy.url <代理地址>，"
+                "或临时设置 WECHAT_PROXY_URL（多个用逗号分隔）"
             )
         self._proxies = list(proxies)
         self._cooldown_period = cooldown_period
@@ -93,16 +93,17 @@ class ProxyManager:
 
 
 def get_proxy_urls() -> list[str]:
-    """从环境变量读取代理 URL 列表"""
-    raw = os.environ.get("WECHAT_PROXY_URL", "")
-    if not raw.strip():
-        return []
-    return [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
+    """从配置读取代理 URL 列表"""
+    from wechat_article_cli.config import get_proxy_urls as load_proxy_urls
+
+    return load_proxy_urls()
 
 
 def get_proxy_token() -> str:
-    """从环境变量读取代理鉴权 token"""
-    return os.environ.get("WECHAT_PROXY_TOKEN", "")
+    """从配置读取代理鉴权 token"""
+    from wechat_article_cli.config import get_proxy_token as load_proxy_token
+
+    return load_proxy_token()
 
 
 def validate_html(html: str) -> tuple[str, str | None]:
@@ -177,7 +178,9 @@ async def fetch_article_html(
             manager.record_failure(proxy)
             code = e.response.status_code
             if code == 403:
-                last_error = RuntimeError("代理认证失败（HTTP 403），请检查 WECHAT_PROXY_TOKEN")
+                last_error = RuntimeError(
+                    "代理认证失败（HTTP 403），请检查 proxy.token 或 WECHAT_PROXY_TOKEN"
+                )
             else:
                 last_error = RuntimeError(f"代理返回 HTTP {code}")
         except Exception as e:
@@ -221,5 +224,6 @@ async def _fetch_direct(link: str) -> str:
     if status == "exception":
         raise _article_status_error(msg)
     raise RuntimeError(
-        "直连请求被微信风控拦截。请配置 WECHAT_PROXY_URL 后重试"
+        "直连请求被微信风控拦截。请执行 wechat-article config set proxy.url <代理地址> 后重试，"
+        "或临时设置 WECHAT_PROXY_URL"
     )

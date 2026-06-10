@@ -172,17 +172,33 @@ wechat-article group import ./groups.json
 
 ## 代理配置
 
-文章正文会先尝试直连。遇到微信风控拦截时，可以配置代理服务：
+文章正文会先尝试直连。遇到微信风控拦截时，可以配置代理服务。推荐把长期配置写入 `config.yml`：
 
 ```bash
-export WECHAT_PROXY_URL="https://your-worker.example.com"
-export WECHAT_PROXY_TOKEN="your-token"
+wechat-article config set proxy.url "https://your-worker.example.com"
+wechat-article config set proxy.token "your-token"
+wechat-article config show
 ```
 
 多个代理用英文逗号分隔：
 
 ```bash
-export WECHAT_PROXY_URL="https://a.example.com,https://b.example.com"
+wechat-article config set proxy.url "https://a.example.com,https://b.example.com"
+```
+
+查看配置文件路径：
+
+```bash
+wechat-article config path
+```
+
+默认配置文件位于 `~/.wechat-article/config.yml`。如果设置了 `WECHAT_ARTICLE_HOME`，配置文件会写入对应目录下的 `config.yml`。
+
+环境变量可以临时覆盖 `config.yml`，适合 CI、一次性测试或临时换代理：
+
+```bash
+export WECHAT_PROXY_URL="https://temporary-worker.example.com"
+export WECHAT_PROXY_TOKEN="temporary-token"
 ```
 
 代理接口约定：
@@ -218,20 +234,20 @@ WECHAT_PROXY_TOKEN=一段随机字符串
 6. 在本地配置：
 
 ```bash
-export WECHAT_PROXY_URL="https://your-worker.your-subdomain.workers.dev"
-export WECHAT_PROXY_TOKEN="一段随机字符串"
+wechat-article config set proxy.url "https://your-worker.your-subdomain.workers.dev"
+wechat-article config set proxy.token "一段随机字符串"
 ```
 
 如果你部署了多个 Worker，多个地址用英文逗号分隔：
 
 ```bash
-export WECHAT_PROXY_URL="https://a.example.com,https://b.example.com"
+wechat-article config set proxy.url "https://a.example.com,https://b.example.com"
 ```
 
 安全建议：
 
 - Worker 示例只允许代理 `mp.weixin.qq.com`，避免被当成开放代理滥用。
-- 建议设置 `WECHAT_PROXY_TOKEN`，同时不要公开 Worker 地址。
+- 建议设置 `proxy.token`，同时保管好 Worker 地址。
 - 发现流量异常时，直接改 token 或删除 Worker 后重新部署。
 - 如果使用自定义域名，可以在 Cloudflare 里给 Worker 绑定自定义域名，访问稳定性通常会更好。
 
@@ -248,8 +264,10 @@ wechat-article group export ./groups.json --json
 wechat-article task list --json
 wechat-article run status <run_id> --json
 wechat-article article list AI新榜 --json
+wechat-article config show --json
 wechat-article inspect article.content --json
 wechat-article schema article.content --json
+wechat-article schema config.set --json
 ```
 
 输出会带统一 envelope：

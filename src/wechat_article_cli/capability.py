@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from wechat_article_cli._toolkit.describe.doctor import BoundDoctorCheck
 from wechat_article_cli._toolkit.describe.spec import (
     ArgumentSpec,
@@ -22,6 +20,11 @@ INSPECTABLE_COMMANDS = (
     "auth.start",
     "auth.confirm",
     "auth.check",
+    "config",
+    "config.path",
+    "config.show",
+    "config.set",
+    "config.unset",
     "account",
     "account.list",
     "account.search",
@@ -130,6 +133,92 @@ AUTH_CHECK_SPEC = CommandSpec(
     output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
     auth_mode="none",
     mutating=False,
+)
+
+
+CONFIG_SPEC = CommandSpec(
+    name="config",
+    path="wechat_article.config",
+    summary="查看和修改本地配置",
+    description="配置文件默认位于 wechat-article home 下的 config.yml。环境变量仍然可以临时覆盖配置文件。",
+    when_to_use="当你希望持久保存代理地址、代理 token，或检查当前生效配置时。",
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} config show", description="查看本地配置和生效配置"),
+        ExampleSpec(command=f"{CLI_NAME} config set proxy.url https://your-worker.example.com", description="设置代理地址"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
+    next_steps=[
+        f"设置代理地址：`{CLI_NAME} config set proxy.url <url>`",
+        f"设置代理 token：`{CLI_NAME} config set proxy.token <token>`",
+        f"检查配置：`{CLI_NAME} config show --json`",
+    ],
+)
+
+
+CONFIG_PATH_SPEC = CommandSpec(
+    name="config.path",
+    path="wechat_article.config.path",
+    summary="显示 config.yml 路径",
+    when_to_use="当你想知道当前工作区的配置文件写在哪里时。",
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} config path", description="显示配置文件路径"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=False,
+)
+
+
+CONFIG_SHOW_SPEC = CommandSpec(
+    name="config.show",
+    path="wechat_article.config.show",
+    summary="查看本地配置和生效配置",
+    when_to_use="当你想确认代理地址、代理 token 是否已经配置，以及配置来自 env 还是 config.yml 时。",
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} config show --json", description="结构化查看配置"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=False,
+)
+
+
+CONFIG_SET_SPEC = CommandSpec(
+    name="config.set",
+    path="wechat_article.config.set",
+    summary="设置本地配置项",
+    when_to_use="当你希望把代理地址或代理 token 写入 config.yml，供后续命令长期使用时。",
+    arguments=[
+        ArgumentSpec(name="key", description="配置 key，可选 proxy.url、proxy.token", required=True, positional=True, value_type="string"),
+        ArgumentSpec(name="value", description="配置值", required=True, positional=True, value_type="string"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} config set proxy.url https://your-worker.example.com", description="设置单个代理"),
+        ExampleSpec(command=f"{CLI_NAME} config set proxy.url https://a.example.com,https://b.example.com", description="设置多个代理"),
+        ExampleSpec(command=f"{CLI_NAME} config set proxy.token your-token", description="设置代理鉴权 token"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
+)
+
+
+CONFIG_UNSET_SPEC = CommandSpec(
+    name="config.unset",
+    path="wechat_article.config.unset",
+    summary="删除本地配置项",
+    when_to_use="当你希望从 config.yml 删除代理地址或代理 token 时。",
+    arguments=[
+        ArgumentSpec(name="key", description="配置 key，可选 proxy.url、proxy.token", required=True, positional=True, value_type="string"),
+    ],
+    examples=[
+        ExampleSpec(command=f"{CLI_NAME} config unset proxy.token", description="删除代理 token"),
+    ],
+    output=OutputSpec(supports_human=True, supports_json=True, supports_yaml=True),
+    auth_mode="none",
+    mutating=True,
 )
 
 
@@ -505,7 +594,8 @@ ARTICLE_CONTENT_SPEC = CommandSpec(
         "抓取正文后，可交给 Obsidian/飞书等后续能力继续处理",
     ],
     failure_recovery=[
-        "如果直连失败，优先检查 `WECHAT_PROXY_URL` 是否配置",
+        f"如果直连失败，优先执行 `{CLI_NAME} config show` 检查代理配置",
+        f"需要代理时，执行 `{CLI_NAME} config set proxy.url <代理地址>`",
     ],
 )
 
@@ -716,6 +806,7 @@ CAPABILITY_SPEC = CapabilitySpec(
     ],
     next_steps=[
         "登录后先用 account/group 维护公众号与分组",
+        f"需要代理抓正文时，用 `{CLI_NAME} config set proxy.url <代理地址>`",
         "需要正文时，用 article list/content；需要批量化时，用 task/run",
     ],
     commands=[
@@ -723,6 +814,11 @@ CAPABILITY_SPEC = CapabilitySpec(
         AUTH_CONFIRM_SPEC,
         AUTH_CHECK_SPEC,
         AUTH_SPEC,
+        CONFIG_SPEC,
+        CONFIG_PATH_SPEC,
+        CONFIG_SHOW_SPEC,
+        CONFIG_SET_SPEC,
+        CONFIG_UNSET_SPEC,
         ACCOUNT_SPEC,
         ACCOUNT_LIST_SPEC,
         ACCOUNT_SEARCH_SPEC,
@@ -773,6 +869,11 @@ COMMAND_SPECS = {
     "auth.confirm": AUTH_CONFIRM_SPEC,
     "auth.check": AUTH_CHECK_SPEC,
     "auth": AUTH_SPEC,
+    "config": CONFIG_SPEC,
+    "config.path": CONFIG_PATH_SPEC,
+    "config.show": CONFIG_SHOW_SPEC,
+    "config.set": CONFIG_SET_SPEC,
+    "config.unset": CONFIG_UNSET_SPEC,
     "account": ACCOUNT_SPEC,
     "account.list": ACCOUNT_LIST_SPEC,
     "account.search": ACCOUNT_SEARCH_SPEC,
@@ -828,11 +929,7 @@ def build_doctor_checks() -> list[BoundDoctorCheck]:
         ),
         BoundDoctorCheck(
             spec=DoctorCheckSpec(name="proxy_config", description="代理配置是否存在"),
-            runner=lambda: {
-                "ok": True,
-                "message": "已配置 WECHAT_PROXY_URL" if os.environ.get("WECHAT_PROXY_URL") else "未配置 WECHAT_PROXY_URL，文章正文将先尝试直连",
-                "hint": None if os.environ.get("WECHAT_PROXY_URL") else "直连遇到微信风控时，再配置文章代理",
-            },
+            runner=lambda: _check_proxy_config(),
         ),
         BoundDoctorCheck(
             spec=DoctorCheckSpec(name="saved_accounts", description="本地公众号库是否可读取"),
@@ -859,6 +956,32 @@ def _check_auth_status():
     if status == "expired":
         return {"ok": False, "message": "公众号后台凭证已过期", "hint": f"请执行 {CLI_NAME} auth start 重新生成二维码"}
     return {"ok": False, "message": "未登录公众号后台", "hint": f"请执行 {CLI_NAME} auth start 生成二维码"}
+
+
+def _check_proxy_config():
+    from wechat_article_cli.config import build_config_show_payload
+
+    payload = build_config_show_payload()
+    proxy = payload["effective"].get("proxy", {})
+    urls = proxy.get("url") or []
+    source = payload["sources"].get("proxy.url", "missing")
+    details = {
+        "proxy_count": len(urls),
+        "source": source,
+        "config_path": payload["path"],
+    }
+    if urls:
+        return {
+            "ok": True,
+            "message": f"已配置文章代理（{len(urls)} 个，来源：{source}）",
+            "details": details,
+        }
+    return {
+        "ok": True,
+        "message": "未配置文章代理，文章正文将先尝试直连",
+        "hint": f"直连遇到微信风控时，可执行 {CLI_NAME} config set proxy.url <代理地址>",
+        "details": details,
+    }
 
 
 def _check_saved_accounts():

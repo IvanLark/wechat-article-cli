@@ -27,6 +27,35 @@ class AuthCheckOutput(BaseModel):
     remaining_seconds: int | None = None
 
 
+class ConfigPathOutput(BaseModel):
+    path: str
+    exists: bool = False
+
+
+class ConfigShowOutput(BaseModel):
+    path: str
+    exists: bool = False
+    values: dict[str, Any] = Field(default_factory=dict)
+    effective: dict[str, Any] = Field(default_factory=dict)
+    sources: dict[str, Literal["env", "config", "missing"]] = Field(default_factory=dict)
+
+
+class ConfigSetInput(BaseModel):
+    key: Literal["proxy.url", "proxy.urls", "proxy.token"]
+    value: str
+
+
+class ConfigUnsetInput(BaseModel):
+    key: Literal["proxy.url", "proxy.urls", "proxy.token"]
+
+
+class ConfigMutationOutput(BaseModel):
+    path: str
+    key: str
+    action: Literal["set", "unset"]
+    value: Any | None = None
+
+
 class AccountImportInput(BaseModel):
     json_path: str
 

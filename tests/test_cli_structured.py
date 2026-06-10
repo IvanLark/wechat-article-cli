@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import yaml
 from click.testing import CliRunner
 
 from wechat_article_cli.cli import cli
@@ -13,8 +14,21 @@ from wechat_article_cli.storage import (
 )
 
 
-def _invoke_json(runner: CliRunner, home: Path, args: list[str]) -> dict:
-    result = runner.invoke(cli, args, env={"WECHAT_ARTICLE_HOME": str(home)})
+def _invoke_json(
+    runner: CliRunner,
+    home: Path,
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> dict:
+    command_env = {
+        "WECHAT_ARTICLE_HOME": str(home),
+        "WECHAT_PROXY_URL": "",
+        "WECHAT_PROXY_TOKEN": "",
+    }
+    if env:
+        command_env.update(env)
+    result = runner.invoke(cli, args, env=command_env)
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["ok"] is True
@@ -263,3 +277,99 @@ def test_schema_exposes_structured_contracts(tmp_path: Path) -> None:
     )
     assert library_export["input_schema"]["title"] == "LibraryExportInput"
     assert library_export["output_schema"]["title"] == "LibraryExportOutput"
+
+
+def test_config_commands_and_proxy_resolution(tmp_path: Path) -> None:
+    runner = CliRunner()
+    secret = "secret-token-value"
+
+    config_path = _invoke_json(runner, tmp_path, ["config", "path", "--json", "--compact"])
+    assert config_path["path"].endswith("config.yml")
+    assert config_path["exists"] is False
+
+    initial = _invoke_json(runner, tmp_path, ["config", "show", "--json", "--compact"])
+    assert initial["exists"] is False
+    assert initial["effective"]["proxy"]["url"] == []
+    assert initial["effective"]["proxy"]["token"] == ""
+    assert initial["sources"] == {"proxy.url": "missing", "proxy.token": "missing"}
+
+    url_result = _invoke_json(
+        runner,
+        tmp_path,
+        [
+            "config",
+            "set",
+            "proxy.url",
+            "https://a.example.com,https://b.example.com/",
+            "--json",
+            "--compact",
+        ],
+    )
+    assert url_result["value"] == ["https://a.example.com", "https://b.example.com"]
+
+    token_result = _invoke_json(
+        runner,
+        tmp_path,
+        ["config", "set", "proxy.token", secret, "--json", "--compact"],
+    )
+    assert token_result["value"] == "sec...lue"
+    assert secret not in json.dumps(token_result, ensure_ascii=False)
+
+    file_data = yaml.safe_load((tmp_path / "config.yml").read_text(encoding="utf-8"))
+    assert file_data == {
+        "proxy": {
+            "url": ["https://a.example.com", "https://b.example.com"],
+            "token": secret,
+        }
+    }
+
+    shown = _invoke_json(runner, tmp_path, ["config", "show", "--json", "--compact"])
+    assert shown["exists"] is True
+    assert shown["values"]["proxy"]["url"] == ["https://a.example.com", "https://b.example.com"]
+    assert shown["values"]["proxy"]["token"] == "sec...lue"
+    assert shown["effective"]["proxy"]["token"] == "sec...lue"
+    assert secret not in json.dumps(shown, ensure_ascii=False)
+    assert shown["sources"] == {"proxy.url": "config", "proxy.token": "config"}
+
+    doctor = _invoke_json(runner, tmp_path, ["doctor", "--json", "--compact"])
+    assert doctor["proxy_configured"] is True
+    assert doctor["proxy_count"] == 2
+    proxy_check = next(check for check in doctor["checks"] if check["name"] == "proxy_config")
+    assert proxy_check["details"]["source"] == "config"
+    assert proxy_check["details"]["proxy_count"] == 2
+
+    env_shown = _invoke_json(
+        runner,
+        tmp_path,
+        ["config", "show", "--json", "--compact"],
+        env={
+            "WECHAT_PROXY_URL": "https://env.example.com",
+            "WECHAT_PROXY_TOKEN": "env-token-secret",
+        },
+    )
+    assert env_shown["values"]["proxy"]["url"] == [
+        "https://a.example.com",
+        "https://b.example.com",
+    ]
+    assert env_shown["effective"]["proxy"]["url"] == ["https://env.example.com"]
+    assert env_shown["effective"]["proxy"]["token"] == "env...ret"
+    assert "env-token-secret" not in json.dumps(env_shown, ensure_ascii=False)
+    assert env_shown["sources"] == {"proxy.url": "env", "proxy.token": "env"}
+
+    unset = _invoke_json(
+        runner,
+        tmp_path,
+        ["config", "unset", "proxy.token", "--json", "--compact"],
+    )
+    assert unset["action"] == "unset"
+    assert unset["value"] is None
+    file_data = yaml.safe_load((tmp_path / "config.yml").read_text(encoding="utf-8"))
+    assert file_data == {"proxy": {"url": ["https://a.example.com", "https://b.example.com"]}}
+
+    config_schema = _invoke_json(runner, tmp_path, ["schema", "config.set", "--json", "--compact"])
+    assert config_schema["input_schema"]["title"] == "ConfigSetInput"
+    assert config_schema["output_schema"]["title"] == "ConfigMutationOutput"
+
+    show_schema = _invoke_json(runner, tmp_path, ["schema", "config.show", "--json", "--compact"])
+    assert show_schema["input_schema"] is None
+    assert show_schema["output_schema"]["title"] == "ConfigShowOutput"

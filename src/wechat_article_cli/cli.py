@@ -62,6 +62,11 @@ from wechat_article_cli.models import (
     AuthCheckOutput,
     AuthConfirmOutput,
     AuthStartOutput,
+    ConfigMutationOutput,
+    ConfigPathOutput,
+    ConfigSetInput,
+    ConfigShowOutput,
+    ConfigUnsetInput,
     DoctorPayload,
     GroupAddInput,
     GroupAddOutput,
@@ -389,6 +394,31 @@ def _render_human_auth_check(result: AuthCheckOutput) -> None:
         click.echo(f"剩余有效期：{result.remaining_seconds} 秒")
 
 
+def _render_human_config_path(result: ConfigPathOutput) -> None:
+    click.echo(result.path)
+
+
+def _render_human_config_show(result: ConfigShowOutput) -> None:
+    click.echo(f"配置文件：{result.path}")
+    click.echo(f"文件存在：{'yes' if result.exists else 'no'}")
+    click.echo("")
+    click.echo("生效配置：")
+    print_yaml(result.effective)
+    click.echo("来源：")
+    print_yaml(result.sources)
+
+
+def _render_human_config_mutation(result: ConfigMutationOutput) -> None:
+    if result.action == "set":
+        click.echo(f"已设置 {result.key}")
+        if result.value is not None:
+            click.echo("当前值：")
+            print_yaml(result.value)
+    else:
+        click.echo(f"已删除 {result.key}")
+    click.echo(f"配置文件：{result.path}")
+
+
 def _render_human_library_import(result: LibraryImportOutput) -> None:
     click.echo("公众号库导入完成")
     click.echo(f"文件：{result.json_path}")
@@ -572,6 +602,115 @@ def auth_check_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact
     try:
         result = AuthCheckOutput.model_validate(check_auth())
         _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_auth_check)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@cli.group("config", **group_help_kwargs(get_command_spec("config")))
+def config_group() -> None:
+    pass
+
+
+@config_group.command("path", **command_help_kwargs(get_command_spec("config.path")))
+@structured_output_options
+@click.pass_context
+def config_path_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
+    from wechat_article_cli.config import build_config_path_payload
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.config.path",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        result = ConfigPathOutput(**build_config_path_payload())
+        _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_config_path)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@config_group.command("show", **command_help_kwargs(get_command_spec("config.show")))
+@structured_output_options
+@click.pass_context
+def config_show_command(ctx: click.Context, as_json: bool, as_yaml: bool, compact: bool) -> None:
+    from wechat_article_cli.config import build_config_show_payload
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.config.show",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        result = ConfigShowOutput(**build_config_show_payload())
+        _emit_result(result, command_ctx, compact=compact, human_renderer=_render_human_config_show)
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@config_group.command("set", **command_help_kwargs(get_command_spec("config.set")))
+@click.argument("key")
+@click.argument("value")
+@structured_output_options
+@click.pass_context
+def config_set_command(
+    ctx: click.Context,
+    key: str,
+    value: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.config import set_config_value
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.config.set",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        input_model = ConfigSetInput(key=key, value=value)
+        result = ConfigMutationOutput(**set_config_value(input_model.key, input_model.value))
+        _emit_result(
+            result,
+            command_ctx,
+            compact=compact,
+            human_renderer=_render_human_config_mutation,
+        )
+    except Exception as exc:
+        _emit_failure(command_ctx, exc, compact=compact)
+
+
+@config_group.command("unset", **command_help_kwargs(get_command_spec("config.unset")))
+@click.argument("key")
+@structured_output_options
+@click.pass_context
+def config_unset_command(
+    ctx: click.Context,
+    key: str,
+    as_json: bool,
+    as_yaml: bool,
+    compact: bool,
+) -> None:
+    from wechat_article_cli.config import unset_config_value
+
+    command_ctx = _build_click_context(
+        ctx,
+        command_path="wechat_article.config.unset",
+        as_json=as_json,
+        as_yaml=as_yaml,
+    )
+    try:
+        input_model = ConfigUnsetInput(key=key)
+        result = ConfigMutationOutput(**unset_config_value(input_model.key))
+        _emit_result(
+            result,
+            command_ctx,
+            compact=compact,
+            human_renderer=_render_human_config_mutation,
+        )
     except Exception as exc:
         _emit_failure(command_ctx, exc, compact=compact)
 
@@ -1486,9 +1625,15 @@ def inspect_command(
         verbose=bool(ctx.obj.get("verbose")),
     )
     input_model_map = {
+        "auth": None,
         "auth.start": None,
         "auth.confirm": None,
         "auth.check": None,
+        "config": None,
+        "config.path": None,
+        "config.show": None,
+        "config.set": ConfigSetInput,
+        "config.unset": ConfigUnsetInput,
         "account": None,
         "account.list": AccountListInput,
         "account.search": AccountSearchInput,
@@ -1507,6 +1652,7 @@ def inspect_command(
         "group.delete": GroupDeleteInput,
         "group.add": GroupAddInput,
         "group.remove": GroupRemoveInput,
+        "article": None,
         "article.list": ArticleListInput,
         "article.content": ArticleContentInput,
         "task": None,
@@ -1521,9 +1667,15 @@ def inspect_command(
         "doctor": None,
     }
     output_model_map = {
+        "auth": None,
         "auth.start": AuthStartOutput,
         "auth.confirm": AuthConfirmOutput,
         "auth.check": AuthCheckOutput,
+        "config": None,
+        "config.path": ConfigPathOutput,
+        "config.show": ConfigShowOutput,
+        "config.set": ConfigMutationOutput,
+        "config.unset": ConfigMutationOutput,
         "account": None,
         "account.list": AccountListOutput,
         "account.search": AccountSearchOutput,
@@ -1542,6 +1694,7 @@ def inspect_command(
         "group.delete": GroupDeleteOutput,
         "group.add": GroupAddOutput,
         "group.remove": GroupRemoveOutput,
+        "article": None,
         "article.list": ArticleListOutput,
         "article.content": ArticleContentOutput,
         "task": None,
@@ -1586,9 +1739,15 @@ def schema_command(
         verbose=bool(ctx.obj.get("verbose")),
     )
     input_model_map = {
+        "auth": None,
         "auth.start": None,
         "auth.confirm": None,
         "auth.check": None,
+        "config": None,
+        "config.path": None,
+        "config.show": None,
+        "config.set": ConfigSetInput,
+        "config.unset": ConfigUnsetInput,
         "account": None,
         "account.list": AccountListInput,
         "account.search": AccountSearchInput,
@@ -1607,6 +1766,7 @@ def schema_command(
         "group.delete": GroupDeleteInput,
         "group.add": GroupAddInput,
         "group.remove": GroupRemoveInput,
+        "article": None,
         "article.list": ArticleListInput,
         "article.content": ArticleContentInput,
         "task": None,
@@ -1621,9 +1781,15 @@ def schema_command(
         "doctor": None,
     }
     output_model_map = {
+        "auth": None,
         "auth.start": AuthStartOutput,
         "auth.confirm": AuthConfirmOutput,
         "auth.check": AuthCheckOutput,
+        "config": None,
+        "config.path": ConfigPathOutput,
+        "config.show": ConfigShowOutput,
+        "config.set": ConfigMutationOutput,
+        "config.unset": ConfigMutationOutput,
         "account": None,
         "account.list": AccountListOutput,
         "account.search": AccountSearchOutput,
@@ -1642,6 +1808,7 @@ def schema_command(
         "group.delete": GroupDeleteOutput,
         "group.add": GroupAddOutput,
         "group.remove": GroupRemoveOutput,
+        "article": None,
         "article.list": ArticleListOutput,
         "article.content": ArticleContentOutput,
         "task": None,
